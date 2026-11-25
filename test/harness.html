@@ -1,0 +1,59 @@
+<!doctype html><html><head><meta charset="utf-8"><title>harness</title>
+<style>body{margin:0;background:#1c1c1e;font-family:sans-serif;color:#eee}#w{padding:16px}ha-card{display:block}</style>
+<script>
+// tiny stand-ins for HA elements
+customElements.define('ha-card', class extends HTMLElement {});
+customElements.define('ha-icon', class extends HTMLElement { static get observedAttributes(){return ['icon']} attributeChangedCallback(){ this.textContent='♪'; this.style.cssText='font-size:12px;color:#888'; } });
+</script>
+<script type="module" src="../dist/hifi-music-player-card.js"></script>
+</head><body><div id="w"></div>
+<script type="module">
+const q = new URLSearchParams(location.search);
+const W = +(q.get('w') || 1200);
+const now = new Date().toISOString();
+const sf = 1|2|4|8|16|32|512|4096|16384|32768|131072|262144|2097152;
+const st = (id, s, a) => ({ entity_id: id, state: s, attributes: a });
+const states = {
+  'media_player.wiim_pro_6a20': st('media_player.wiim_pro_6a20', 'playing', { friendly_name: 'WiiM Attic', supported_features: sf, volume_level: 0.42, media_title: 'Brothers in Arms', media_artist: 'Dire Straits', media_album_name: 'Brothers in Arms', media_duration: 420, media_position: 95, media_position_updated_at: now, app_name: 'Music Assistant', media_content_type: 'music', shuffle: false, repeat: 'off' }),
+  'media_player.wiim_pro_1': st('media_player.wiim_pro_1', 'idle', { friendly_name: 'WiiM Attic', supported_features: sf }),
+  'media_player.kitchen_echo': st('media_player.kitchen_echo', 'idle', { friendly_name: 'Kitchen Echo', supported_features: 1|4|8|512|16384 }),
+  'media_player.tv': st('media_player.tv', 'off', { friendly_name: 'Living room TV', supported_features: 1|512|1024|16384 }),
+  'media_player.yana': st('media_player.yana', 'unavailable', { friendly_name: "Yana's TV", supported_features: sf }),
+  'input_select.music_output': st('input_select.music_output', 'WiiM Attic', { options: ['WiiM Attic', 'Kitchen Echo'] }),
+};
+const entities = {
+  'media_player.wiim_pro_6a20': { entity_id: 'media_player.wiim_pro_6a20', platform: 'music_assistant', area_id: 'attic' },
+  'media_player.wiim_pro_1': { entity_id: 'media_player.wiim_pro_1', platform: 'linkplay', area_id: 'attic' },
+  'media_player.kitchen_echo': { entity_id: 'media_player.kitchen_echo', platform: 'alexa_devices', area_id: 'kitchen' },
+  'media_player.tv': { entity_id: 'media_player.tv', platform: 'samsungtv', area_id: 'living' },
+  'media_player.yana': { entity_id: 'media_player.yana', platform: 'samsungtv', area_id: 'yana' },
+};
+const areas = { attic: { area_id: 'attic', name: 'Attic' }, kitchen: { area_id: 'kitchen', name: 'Kitchen' }, living: { area_id: 'living', name: 'Living room' }, yana: { area_id: 'yana', name: "Yana's room" } };
+const node = (title, id, cls, exp, play, extra = {}) => ({ title, media_content_id: id, media_class: cls, media_content_type: exp ? '' : 'audio/mpeg', can_expand: exp, can_play: play, children_media_class: null, thumbnail: null, ...extra });
+const tree = {
+  'media-source://': { title: 'Media', children: [node('My media', 'media-source://media_source', 'directory', true, false), node('Radio Browser', 'media-source://radio_browser', 'directory', true, false), node('Text-to-speech', 'media-source://tts', 'app', true, false), node('Camera', 'media-source://camera', 'video', true, false), node('Jellyfin', 'media-source://jellyfin', 'directory', true, false)] },
+  'media-source://media_source': { title: 'My media', children: [node('Multimedia', 'media-source://media_source/local/Multimedia', 'directory', true, false), node('nas_music', 'media-source://media_source/local/nas_music', 'directory', true, false), node('Photos', 'media-source://media_source/local/Photos', 'directory', true, false, { children_media_class: 'image' })] },
+  'media-source://media_source/local/Multimedia': { title: 'Multimedia', children: [node('Dire Straits', 'ms/ds', 'directory', true, false), node('Βασίλης Τσιτσάνης', 'ms/ts', 'directory', true, false), node('holiday.mp4', 'ms/v', 'video', false, true, { media_content_type: 'video/mp4' })] },
+  'ms/ds': { title: 'Dire Straits', children: [node('01 Money for Nothing.mp3', 'ms/ds/1', 'music', false, true), node('02 Walk of Life.mp3', 'ms/ds/2', 'music', false, true), node('03 So Far Away.mp3', 'ms/ds/3', 'music', false, true)] },
+};
+window.calls = [];
+const hass = {
+  states, entities, areas, devices: {}, language: q.get('lang') || 'en', locale: { language: q.get('lang') || 'en' }, themes: { darkMode: true },
+  hassUrl: (p) => 'http://ha.local' + p,
+  callService: async (d, s, data, target) => { window.calls.push([d, s, data, target]); return {}; },
+  callWS: async (m) => {
+    window.calls.push(['ws', m.type, m]);
+    if (m.type === 'media_source/browse_media') { const n = tree[m.media_content_id]; if (!n) throw new Error('not found'); return { ...n, media_content_id: m.media_content_id, media_class: 'directory', can_expand: true, can_play: false }; }
+    if (m.type === 'config_entries/get') return [{ entry_id: 'MAENTRY', state: 'loaded' }];
+    if (m.type === 'call_service' && m.service === 'get_library') return { response: { items: [{ name: 'Love over Gold', media_type: 'album', uri: 'library://album/1', artists: [{ name: 'Dire Straits' }] }] } };
+    if (m.type === 'media_source/resolve_media') return { url: '/media/local/x.mp3' };
+    return {};
+  },
+};
+const cfg = JSON.parse(q.get('cfg') || '{}');
+const el = document.createElement('hifi-music-player-card');
+el.setConfig({ type: 'custom:hifi-music-player-card', outputs: 'auto', browser_player: true, ...cfg });
+el.hass = hass;
+const w = document.getElementById('w'); w.style.width = W + 'px'; w.appendChild(el);
+window.el = el; window.hass = hass;
+</script></body></html>

@@ -1,0 +1,28 @@
+name: Bug report
+description: Something doesn't work as described
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes: { label: What happened, description: What you did, what you expected, what you saw instead. }
+    validations: { required: true }
+  - type: input
+    id: card
+    attributes: { label: Card version, description: Shown in the browser console (HIFI-MUSIC-PLAYER-CARD x.y.z). }
+    validations: { required: true }
+  - type: input
+    id: ha
+    attributes: { label: Home Assistant version }
+    validations: { required: true }
+  - type: input
+    id: player
+    attributes: { label: Player integration, description: "e.g. Music Assistant, Sonos, Google Cast, WiiM, DLNA" }
+  - type: input
+    id: browser
+    attributes: { label: Browser and device, description: "e.g. Chrome 140 on Windows, HA app on iPad" }
+  - type: textarea
+    id: config
+    attributes: { label: Card configuration (YAML), render: yaml }
+  - type: textarea
+    id: logs
+    attributes: { label: Browser console errors, render: text }

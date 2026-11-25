@@ -1,0 +1,31 @@
+{
+  "name": "hifi-music-player-card",
+  "version": "1.0.0",
+  "description": "Hi-fi music player card for Home Assistant: two themes, auto-discovered outputs, built-in media browser",
+  "type": "module",
+  "license": "MIT",
+  "author": "George Koulogiannis",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gekoul/hifi-music-player-card.git"
+  },
+  "scripts": {
+    "build": "rollup -c",
+    "watch": "rollup -c --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "lit": "^3.3.0"
+  },
+  "devDependencies": {
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^16.0.0",
+    "@rollup/plugin-replace": "^6.0.3",
+    "@rollup/plugin-terser": "^1.0.0",
+    "@rollup/plugin-typescript": "^12.1.0",
+    "rollup": "^4.40.0",
+    "tslib": "^2.8.0",
+    "typescript": "~5.9.3"
+  }
+}

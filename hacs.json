@@ -1,0 +1,6 @@
+{
+  "name": "HiFi Music Player",
+  "filename": "hifi-music-player-card.js",
+  "render_readme": true,
+  "homeassistant": "2026.10.0"
+}
