@@ -51,6 +51,10 @@ export interface OutputConfig {
 }
 
 export interface DiscoveryConfig {
+  /** auto: Music Assistant players when installed, otherwise speakers; music_assistant; speakers; all */
+  source?: 'auto' | 'music_assistant' | 'speakers' | 'all';
+  /** players added by hand on top of what is found */
+  also?: string[];
   include?: string[];
   exclude?: string[];
   include_areas?: string[];

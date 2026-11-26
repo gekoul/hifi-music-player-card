@@ -5,7 +5,7 @@ import type { CardConfig, HomeAssistant, OutputConfig } from './types';
 type Tab = 'players' | 'library' | 'look' | 'layout' | 'controls';
 
 const LABELS: Record<string, string> = {
-  include: 'Only these players', exclude: 'Never show these players', include_areas: 'Only these areas', exclude_areas: 'Leave out these areas',
+  source: 'Which players to find', also: 'Also show these players', include: 'Only these players', exclude: 'Never show these players', include_areas: 'Only these areas', exclude_areas: 'Leave out these areas',
   prefer_music_assistant: 'Show Music Assistant players instead of duplicates', group_by: 'Group outputs by', show_unavailable: 'List offline players',
   browser_player: 'Add "This browser" as an output', default_output: 'Output selected on first load', output_helper: 'Sync output with an input_select helper (optional)',
   remember_output: 'Remember the chosen output in this browser', unavailable: 'Unavailable players',
@@ -76,7 +76,8 @@ export class HifiMusicPlayerCardEditor extends LitElement {
         </div></div>
       ${manual ? this._manual() : html`
         ${this._form(d, [
-          { name: 'include', selector: { entity: { multiple: true, filter: { domain: 'media_player' } } } },
+          { name: 'source', selector: sel([['auto', 'Automatic: Music Assistant players if installed, otherwise speakers'], ['music_assistant', 'Music Assistant players only'], ['speakers', 'Anything that looks like a speaker'], ['all', 'Every media player']]) },
+          { name: 'also', selector: { entity: { multiple: true, filter: { domain: 'media_player' } } } },
           { name: 'exclude', selector: { entity: { multiple: true, filter: { domain: 'media_player' } } } },
           { name: 'include_areas', selector: { area: { multiple: true } } },
           { name: 'exclude_areas', selector: { area: { multiple: true } } },

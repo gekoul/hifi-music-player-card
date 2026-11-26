@@ -32,7 +32,7 @@ Requires Home Assistant **2026.10** or newer.
 type: custom:hifi-music-player-card
 ```
 
-That's all: the card lists every media player it finds, grouped by area.
+That's all. When Music Assistant is installed, the card lists its players (Music Assistant already wraps AirPlay, Cast, DLNA, Sonos, Squeezebox, Alexa and more, and only exposes real audio outputs). Without Music Assistant it lists media players that look like speakers: they play media and have a volume, and are not TVs, remote-control entities, Jellyfin/Plex sessions, buzzers or voice satellites. Add anything else with `discovery.also`, or in the editor.
 
 A fuller example:
 
@@ -63,6 +63,8 @@ Everything can be set in the visual editor. YAML reference:
 | --- | --- | --- |
 | `entity` | — | One player only, no output selector |
 | `outputs` | `auto` | `auto` finds players; or a list of `{entity, name, icon}` / `{browser: true, name}` |
+| `discovery.source` | `auto` | `auto`: Music Assistant players when it is installed, otherwise speakers. Or `music_assistant`, `speakers`, `all` |
+| `discovery.also` | — | Players to add on top of what is found |
 | `discovery.include` / `exclude` | — | Only / never these players (auto mode) |
 | `discovery.include_areas` / `exclude_areas` | — | Only / never these areas |
 | `discovery.include_integrations` / `exclude_integrations` | — | e.g. `[cast]` |
