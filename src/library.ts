@@ -74,6 +74,7 @@ const CLASS_ICON: Record<string, string> = {
   track: 'mdi:music-note', podcast: 'mdi:podcast', genre: 'mdi:tag-music', channel: 'mdi:radio', radio: 'mdi:radio', composer: 'mdi:account-music',
 };
 const CACHE = 'hifi_lib_cache_v1';
+const shuffled = <T,>(a: T[]): T[] => { const r = [...a]; for (let i = r.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [r[i], r[j]] = [r[j], r[i]]; } return r; };
 const START_NAMES = /^(multimedia|music|μουσική|musik|musique|música)$/i;
 
 export class HifiLibrary extends LitElement {
@@ -532,12 +533,20 @@ export class HifiLibrary extends LitElement {
     if (!r?.url) return null;
     return { url: this._url(r.url), title: it.t, artist: it.s, art: it.img };
   }
-  private async _play(it: Item, enqueue?: 'next' | 'add', col?: Col) {
+  /**
+   * Plays an item. `order` is set by the column buttons: 'shuffle' plays the whole list in random order,
+   * 'inorder' (Play all) plays it in order; a single row leaves the player's shuffle setting alone.
+   */
+  private async _play(it: Item, enqueue?: 'next' | 'add', col?: Col, order?: 'shuffle' | 'inorder') {
     const out = this.output, t = this.t;
     if (!out || !this.hass) return;
-    const name = this.outName;
+    const name = this.outName, mix = order === 'shuffle';
+    // speakers that shuffle by themselves: set it before playing a whole list
+    const setShuffle = async (on: boolean) => {
+      if (order && !out.browser && this.caps?.shuffle) await this.hass!.callService('media_player', 'shuffle_set', { entity_id: out.entity, shuffle: on }).catch(() => {});
+    };
     try {
-      if (it.src === 'jh') { await this._playJH(it, enqueue, col); return; }
+      if (it.src === 'jh') { await this._playJH(it, enqueue, col, order); return; }
       if (out.browser) {
         if (it.src !== 'ms') throw new Error(t('browser_cant'));
         let list: Item[];
@@ -545,39 +554,44 @@ export class HifiLibrary extends LitElement {
         if (it.nav) list = await this._files(it);
         else { const sib = (col?.items || []).filter((x) => x.src === 'ms' && x.play && !x.nav); start = Math.max(0, sib.indexOf(it)); list = sib.length ? sib : [it]; }
         if (enqueue) list = [it];
+        if (mix) { list = shuffled(list); start = 0; }
         const first = await this._resolve(list[start]);
         if (!first) throw new Error(t('browser_cant'));
         if (enqueue) { WebPlayer.append(WebPlayer.gen, first); this._say(t('queued_on', { output: name, title: it.t }), true); return; }
         const gen = WebPlayer.load([first]);
         void (async () => { for (let i = start + 1; i < list.length; i++) { if (gen !== WebPlayer.gen) return; const tr = await this._resolve(list[i]); if (tr) WebPlayer.append(gen, tr); } })();
-        this._say(t('playing_on', { output: name, title: it.t }), true);
+        this._say(t(mix ? 'shuffling_on' : 'playing_on', { output: name, title: it.t }), true);
         return;
       }
       if (it.src === 'ma') {
         if (!out.ma) throw new Error('needs a Music Assistant player');
+        await setShuffle(mix);
         await this.hass.callService('music_assistant', 'play_media', { media_id: it.id, media_type: it.ctype, enqueue: enqueue || 'replace' }, { entity_id: out.entity });
       } else if (it.nav) {
         // play a folder: first file now, the rest queued when the player supports a queue
-        const files = await this._files(it);
+        let files = await this._files(it);
         if (!files.length) throw new Error(t('nothing_here'));
+        if (mix) files = shuffled(files);
+        await setShuffle(false);    // the order is already ours
         const pm = (f: Item, e?: string) => this.hass!.callService('media_player', 'play_media', {
           entity_id: out.entity, media_content_id: f.id, media_content_type: f.ctype || 'music', ...(e && this.caps?.enqueue ? { enqueue: e } : {}),
         });
         await pm(files[0], enqueue || 'replace');
         if (this.caps?.enqueue && !enqueue) for (const f of files.slice(1)) await pm(f, 'add');
       } else {
+        await setShuffle(mix);
         await this.hass.callService('media_player', 'play_media', {
           entity_id: out.entity, media_content_id: it.id, media_content_type: it.ctype || 'music',
           ...(this.caps?.enqueue ? { enqueue: enqueue || 'play' } : {}),
         });
       }
-      this._say(t(enqueue ? 'queued_on' : 'playing_on', { output: name, title: it.t }), true);
+      this._say(t(enqueue ? 'queued_on' : mix ? 'shuffling_on' : 'playing_on', { output: name, title: it.t }), true);
     } catch (e: any) {
       this._say(t('cant_play', { output: name, title: it.t, error: String(e?.message || e) }), false);
     }
   }
-  private async _playJH(it: Item, enqueue: 'next' | 'add' | undefined, col?: Col) {
-    const out = this.output!, t = this.t, name = this.outName;
+  private async _playJH(it: Item, enqueue: 'next' | 'add' | undefined, col?: Col, order?: 'shuffle' | 'inorder') {
+    const out = this.output!, t = this.t, name = this.outName, mix = order === 'shuffle';
     let tracks: Item[] = [], start = 0;
     if (it.jk === 'track') {
       const sib = (col?.items || []).filter((x) => x.jk === 'track');
@@ -589,17 +603,21 @@ export class HifiLibrary extends LitElement {
     }
     if (out.browser) {
       const q = (x: Item) => ({ url: x.url!, title: x.t, artist: x.s, album: x.album, art: x.img, dur: x.dur });
-      const list = tracks.filter((x) => x.url);
+      let list = tracks.filter((x) => x.url);
       if (!list.length) throw new Error(t('browser_cant'));
       if (enqueue) { WebPlayer.append(WebPlayer.gen, q(it.jk === 'track' ? it : list[0])); this._say(t('queued_on', { output: name, title: it.t }), true); return; }
+      if (mix) { list = shuffled(list); start = 0; }
       WebPlayer.load(list.map(q), Math.min(start, list.length - 1));
-    } else if (it.jk === 'playlist') {
-      await this.hass!.callService('jellyha', 'play_playlist', { entity_id: out.entity, playlist: it.id });
     } else {
-      const id = it.jk === 'dir' ? it.jdir?.albumId : it.id;
-      await this.hass!.callService('jellyha', 'play_music', { entity_id: out.entity, item_id: id, ...(it.jk === 'track' ? {} : { search_type: 'album' }) });
+      if (order && this.caps?.shuffle) await this.hass!.callService('media_player', 'shuffle_set', { entity_id: out.entity, shuffle: mix }).catch(() => {});
+      if (it.jk === 'playlist') await this.hass!.callService('jellyha', 'play_playlist', { entity_id: out.entity, playlist: it.id, shuffle: mix });
+      else {
+        const id = it.jk === 'dir' ? it.jdir?.albumId : it.id;
+        await this.hass!.callService('jellyha', 'play_music', { entity_id: out.entity, item_id: id, ...(it.jk === 'track' ? {} : { search_type: 'album' }) });
+      }
+      if (mix && it.jk !== 'playlist' && !this.caps?.shuffle) { this._say(t('no_shuffle', { output: name }), false); return; }
     }
-    this._say(t('playing_on', { output: name, title: it.t }), true);
+    this._say(t(mix ? 'shuffling_on' : 'playing_on', { output: name, title: it.t }), true);
   }
   private _say(text: string, ok: boolean) {
     this._toast = { text, ok };
@@ -657,7 +675,8 @@ export class HifiLibrary extends LitElement {
       <div class="ch">
         ${list && ci > 0 ? html`<button type="button" class="back" aria-label=${t('back')} @click=${() => { this._cols = this._cols.slice(0, ci); }}>‹</button>` : nothing}
         <span class="ct">${c.title}</span>${ci && count ? html`<span class="cn">${count}${c.paged?.more ? '+' : ''}</span>` : nothing}
-        ${c.playAll ? html`<button type="button" class="pa" @click=${() => this._play(c.playAll!)}>▶ ${t('play_all').toUpperCase()}</button>` : nothing}
+        ${c.playAll ? html`<button type="button" class="pa" title=${t('play_all')} @click=${() => this._play(c.playAll!, undefined, c, 'inorder')}>▶ ${t('play_all').toUpperCase()}</button>
+          <button type="button" class="pa" title=${t('shuffle_play')} aria-label="${t('shuffle_play')} ${c.title}" @click=${() => this._play(c.playAll!, undefined, c, 'shuffle')}>⇄ ${t('shuffle').toUpperCase()}</button>` : nothing}
       </div>
       <div class="rows" @scroll=${(e: Event) => { const r = e.target as HTMLElement; if (c.paged?.more && r.scrollTop + r.clientHeight > r.scrollHeight - 80) void this._more(c); }}>
         ${c.loading ? html`<div class="msg">${t('loading')}</div>` : c.err ? html`<div class="msg">${t('could_not_load', { error: c.err })}</div>`

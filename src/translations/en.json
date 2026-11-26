@@ -60,5 +60,8 @@
   "recent": "Recently added",
   "search_results": "Search: {term}",
   "step_only": "Step",
-  "on_this_player": "On this player"
+  "on_this_player": "On this player",
+  "shuffle_play": "Shuffle play",
+  "shuffling_on": "Shuffling on {output}: {title}",
+  "no_shuffle": "{output} can't shuffle; playing in order"
 }
