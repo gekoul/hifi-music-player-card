@@ -12,16 +12,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
+      - run: npm run test:unit
       - name: Check tag matches package.json
         run: test "v$(node -p "require('./package.json').version")" = "${GITHUB_REF_NAME}"
       - uses: softprops/action-gh-release@v3
         with:
           files: dist/hifi-music-player-card.js
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}

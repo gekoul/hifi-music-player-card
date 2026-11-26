@@ -313,7 +313,7 @@ export class HifiMusicPlayerCard extends LitElement {
       const pos = this._pos(), dur = this._dur, p = dur ? clamp(pos / dur, 0, 1) : 0;
       const live = !dur && this._state === 'playing';
       this.renderRoot.querySelectorAll<HTMLElement>('[data-k="el"]').forEach((e) => { e.textContent = fmt(pos); });
-      this.renderRoot.querySelectorAll<HTMLElement>('[data-k="rm"]').forEach((e) => { e.textContent = dur ? '-' + fmt(dur - pos) : live ? this._t('live').toUpperCase() : ''; });
+      this.renderRoot.querySelectorAll<HTMLElement>('[data-k="rm"]').forEach((e) => { e.textContent = dur ? '-' + fmt(dur - pos) : live ? this._t('live').toLocaleUpperCase('el') : ''; });
       this.renderRoot.querySelectorAll<HTMLElement>('[data-k="cel"]').forEach((e) => { e.textContent = fmt(pos); });
       this.renderRoot.querySelectorAll<HTMLElement>('[data-k="crm"]').forEach((e) => { e.textContent = dur ? '-' + fmt(dur - pos) : ''; });
       this.renderRoot.querySelectorAll<HTMLElement>('[data-k="pfill"],[data-k="cfill"]').forEach((e) => { const w = e.dataset.w!; e.style.width = w === '%' ? `${p * 100}%` : `${p * +w}px`; });
@@ -392,12 +392,12 @@ export class HifiMusicPlayerCard extends LitElement {
     const live = !this._dur && (status === 'playing' || status === 'paused');
     const title = a.media_title || (status === 'unavailable' ? t('output_unavailable') : this._config.idle_text || t('nothing_playing'));
     const chips: [string, string][] = [];
-    if (o?.browser) chips.push([t('this_browser').toUpperCase(), 't']); else if (a.app_name) chips.push([String(a.app_name).toUpperCase(), 't']);
-    if (a.media_content_type) chips.push([String(a.media_content_type).toUpperCase(), '']);
-    if (live) chips.push([t('live').toUpperCase(), 'a']);
-    if (a.shuffle) chips.push([t('shuffle').toUpperCase(), '']);
-    if (a.repeat && a.repeat !== 'off') chips.push([`${t('repeat').toUpperCase()} ${String(a.repeat).toUpperCase()}`, '']);
-    if (a.is_volume_muted) chips.push([t('muted').toUpperCase(), 'a']);
+    if (o?.browser) chips.push([t('this_browser').toLocaleUpperCase('el'), 't']); else if (a.app_name) chips.push([String(a.app_name).toLocaleUpperCase('el'), 't']);
+    if (a.media_content_type) chips.push([String(a.media_content_type).toLocaleUpperCase('el'), '']);
+    if (live) chips.push([t('live').toLocaleUpperCase('el'), 'a']);
+    if (a.shuffle) chips.push([t('shuffle').toLocaleUpperCase('el'), '']);
+    if (a.repeat && a.repeat !== 'off') chips.push([`${t('repeat').toLocaleUpperCase('el')} ${String(a.repeat).toLocaleUpperCase('el')}`, '']);
+    if (a.is_volume_muted) chips.push([t('muted').toLocaleUpperCase('el'), 'a']);
     const an = String(a.app_name || '');
     const pic = a.entity_picture_local || a.entity_picture || '';
     const outs = this._outputs;
@@ -406,7 +406,7 @@ export class HifiMusicPlayerCard extends LitElement {
       status, title: String(title), artist: String(a.media_artist || ''), album: String(a.media_album_name || ''),
       art: pic && this.hass?.hassUrl && pic.startsWith('/') ? this.hass.hassUrl(pic) : pic,
       placeholder: this._config.placeholder_art,
-      chips, short: live ? t('live').toUpperCase() : o?.browser ? 'BROWSER' : (an.length > 9 ? an.split(/\s+/).map((w) => w[0]).join('') : an).toUpperCase(),
+      chips, short: live ? t('live').toLocaleUpperCase('el') : o?.browser ? 'BROWSER' : (an.length > 9 ? an.split(/\s+/).map((w) => w[0]).join('') : an).toLocaleUpperCase('el'),
       caps: this._caps(o), shuffle: !!a.shuffle, repeat: String(a.repeat || 'off'), muted: !!a.is_volume_muted,
       light: this._light, brand: this._config.brand || '', model: this._config.model || '',
       show: this._show, themeSwitch: this._show('theme_switch'), theme: this._theme, skip: this._skip(),

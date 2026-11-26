@@ -169,6 +169,7 @@ Use the **Player compatibility** issue form to add yours.
 npm ci
 npm run build      # dist/hifi-music-player-card.js
 npm run watch
+npm test           # unit tests (Vitest) and browser tests (Playwright, test/harness.html with a mock Home Assistant)
 ```
 
 Releases: bump `version` in `package.json`, commit, tag `vX.Y.Z` and push the tag. The workflow builds and attaches the file to a GitHub release, which HACS installs.

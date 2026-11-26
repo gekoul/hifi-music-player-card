@@ -207,7 +207,7 @@ export class HifiLibrary extends LitElement {
           const n = await Promise.race([this._browseEntity(ent), new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))]);
           const kids = (n.children || []).filter((c) => !c.media_content_id.startsWith('media-source://') && !NOT_LIB.has(c.media_class) && this._audioOnly(c));
           if (!kids.length) return null;
-          return { src: 'pb', entity: ent, t: PLATFORM_NAME[platform] || platform.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase()), ic: PLATFORM_ICON[platform] || 'mdi:library-shelves', nav: true };
+          return { src: 'pb', entity: ent, t: PLATFORM_NAME[platform] || platform.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toLocaleUpperCase('el')), ic: PLATFORM_ICON[platform] || 'mdi:library-shelves', nav: true };
         } catch { /* try the next entity */ }
       }
       return null;
@@ -657,10 +657,10 @@ export class HifiLibrary extends LitElement {
     return html`<div class="lib ${this.theme}">
       <div class="bar">
         <button type="button" class="tog" aria-expanded=${this._open} @click=${this._toggle}>
-          <span class="chev ${this._open ? 'up' : ''}">▾</span>${(this._open ? t('close_library') : t('library')).toUpperCase()}</button>
+          <span class="chev ${this._open ? 'up' : ''}">▾</span>${(this._open ? t('close_library') : t('library')).toLocaleUpperCase('el')}</button>
         ${this._open ? html`<label class="q"><span aria-hidden="true">⌕</span><input type="search" placeholder=${t('search')} aria-label=${t('search')}
           @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') void this._search((e.target as HTMLInputElement).value.trim()); }}></label>` : nothing}
-        <span class="on">${t('play_on').toUpperCase()} · <b>${this.outName}</b></span>
+        <span class="on">${t('play_on').toLocaleUpperCase('el')} · <b>${this.outName}</b></span>
       </div>
       ${this._open ? html`<div class="mill" style="--lh:${this.cfg.height ?? 420}px" @keydown=${this._onKey}>
         ${this._toast ? html`<div class="toast ${this._toast.ok ? 'ok' : ''}" role="status">${this._toast.text}</div>` : nothing}
@@ -675,13 +675,13 @@ export class HifiLibrary extends LitElement {
       <div class="ch">
         ${list && ci > 0 ? html`<button type="button" class="back" aria-label=${t('back')} @click=${() => { this._cols = this._cols.slice(0, ci); }}>‹</button>` : nothing}
         <span class="ct">${c.title}</span>${ci && count ? html`<span class="cn">${count}${c.paged?.more ? '+' : ''}</span>` : nothing}
-        ${c.playAll ? html`<button type="button" class="pa" title=${t('play_all')} @click=${() => this._play(c.playAll!, undefined, c, 'inorder')}>▶ ${t('play_all').toUpperCase()}</button>
-          <button type="button" class="pa" title=${t('shuffle_play')} aria-label="${t('shuffle_play')} ${c.title}" @click=${() => this._play(c.playAll!, undefined, c, 'shuffle')}>⇄ ${t('shuffle').toUpperCase()}</button>` : nothing}
+        ${c.playAll ? html`<button type="button" class="pa" title=${t('play_all')} @click=${() => this._play(c.playAll!, undefined, c, 'inorder')}>▶ ${t('play_all').toLocaleUpperCase('el')}</button>
+          <button type="button" class="pa" title=${t('shuffle_play')} aria-label="${t('shuffle_play')} ${c.title}" @click=${() => this._play(c.playAll!, undefined, c, 'shuffle')}>⇄ ${t('shuffle').toLocaleUpperCase('el')}</button>` : nothing}
       </div>
       <div class="rows" @scroll=${(e: Event) => { const r = e.target as HTMLElement; if (c.paged?.more && r.scrollTop + r.clientHeight > r.scrollHeight - 80) void this._more(c); }}>
         ${c.loading ? html`<div class="msg">${t('loading')}</div>` : c.err ? html`<div class="msg">${t('could_not_load', { error: c.err })}</div>`
           : !c.items.length ? html`<div class="msg">${t('nothing_here')}</div>`
-            : c.items.map((it, ri) => it.kind === 'head' ? html`<div class="hd">${it.t.toUpperCase()}</div>` : it.kind === 'msg' ? html`<div class="msg">${it.t}</div>`
+            : c.items.map((it, ri) => it.kind === 'head' ? html`<div class="hd">${it.t.toLocaleUpperCase('el')}</div>` : it.kind === 'msg' ? html`<div class="msg">${it.t}</div>`
               : html`<div class="r ${it.mclass === 'directory' ? 'dir' : ''} ${c.sel === ri ? 'sel' : ''}" role="option" tabindex="0" aria-selected=${c.sel === ri}
                   data-c=${ci} data-r=${ri} @click=${() => this._openRow(ci, ri)}>
                 <span class="ri"><ha-icon icon=${it.ic || 'mdi:music'}></ha-icon>${it.img ? html`<img src=${it.img} loading="lazy" alt="" @error=${(e: Event) => (e.target as HTMLElement).remove()}>` : nothing}</span>

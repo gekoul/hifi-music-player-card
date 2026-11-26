@@ -70,7 +70,7 @@ export function vu(x: number, y: number, w: number, h: number, ch: 'L' | 'R', la
       <rect width=${w} height=${h} fill="url(#${gid})"></rect>
       ${arc(R - 7, -48, 16, '#2a2622', 1.4)}${arc(R - 7, 16, 42, '#b3261e', 5)}${ticks}
       <text x=${cx} y=${h - (small ? 30 : 54)} text-anchor="middle" font-family="Inter,sans-serif" font-size=${small ? 14 : 20} font-weight="800" fill="#2a2622" letter-spacing="2">VU</text>
-      ${small ? nothing : svg`<text x=${cx} y=${h - 34} text-anchor="middle" font-family="Inter,sans-serif" font-size="9" font-weight="700" fill="#5a4c34" letter-spacing="3">${label.toUpperCase()}</text>`}
+      ${small ? nothing : svg`<text x=${cx} y=${h - 34} text-anchor="middle" font-family="Inter,sans-serif" font-size="9" font-weight="700" fill="#5a4c34" letter-spacing="3">${label.toLocaleUpperCase('el')}</text>`}
       <line data-ndl=${ch} x1=${cx} y1=${cy} x2=${cx} y2=${cy - R - 2} stroke="#121212" stroke-width="1.8" transform="rotate(-48 ${cx} ${cy})"></line>
       <circle cx=${cx} cy=${Math.min(cy, h + 4)} r=${R < h + 6 ? 16 * (h / 160) : 20} fill="#1a1612"></circle>
     </svg>

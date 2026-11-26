@@ -41,15 +41,15 @@ export interface VM {
 
 const statusHTML = (vm: VM) => {
   const s = vm.status, t = vm.t;
-  const lab = s === 'playing' ? html`<span style="color:var(--acc)">● ${t('playing').toUpperCase()}</span>`
-    : s === 'paused' ? html`<span style="color:#ffd166">❚❚ ${t('paused').toUpperCase()}</span>`
-      : s === 'unavailable' ? html`<span style="color:#ff6b6b">● ${t('offline').toUpperCase()}</span>`
-        : html`■ ${t('stopped').toUpperCase()}`;
-  return html`${lab}&nbsp;&nbsp;·&nbsp;&nbsp;${(vm.out ? vm.outName(vm.out) : '—').toUpperCase()}`;
+  const lab = s === 'playing' ? html`<span style="color:var(--acc)">● ${t('playing').toLocaleUpperCase('el')}</span>`
+    : s === 'paused' ? html`<span style="color:#ffd166">❚❚ ${t('paused').toLocaleUpperCase('el')}</span>`
+      : s === 'unavailable' ? html`<span style="color:#ff6b6b">● ${t('offline').toLocaleUpperCase('el')}</span>`
+        : html`■ ${t('stopped').toLocaleUpperCase('el')}`;
+  return html`${lab}&nbsp;&nbsp;·&nbsp;&nbsp;${(vm.out ? vm.outName(vm.out) : '—').toLocaleUpperCase('el')}`;
 };
 
 const themeToggle = (vm: VM, dark: string) => vm.themeSwitch ? html`<div class="tsw" role="group" aria-label=${vm.t('theme')} style="background:${dark}">
-  ${(['streamer', 'console'] as const).map((th) => html`<button type="button" class="thb ${vm.theme === th ? 'on' : ''}" aria-pressed=${vm.theme === th} @click=${() => vm.setTheme(th)}>${vm.t(th).toUpperCase()}</button>`)}
+  ${(['streamer', 'console'] as const).map((th) => html`<button type="button" class="thb ${vm.theme === th ? 'on' : ''}" aria-pressed=${vm.theme === th} @click=${() => vm.setTheme(th)}>${vm.t(th).toLocaleUpperCase('el')}</button>`)}
 </div>` : nothing;
 
 const outputSelect = (vm: VM, cls: string, style = '') => html`<select class="osel ${cls}" style=${style} aria-label=${vm.t('output')} @change=${(e: Event) => vm.pick(+(e.target as HTMLSelectElement).value)}>
@@ -97,7 +97,7 @@ export function streamerWide(vm: VM): TemplateResult {
   <div class="panel" style="${pos(14, 14, 1172, 432)}border-radius:18px;${HERO}"></div>
   <div style="${pos(14, 14, 1172, 432)}border-radius:18px;pointer-events:none;background:linear-gradient(115deg,transparent 40%,rgba(255,255,255,.03) 48%,transparent 56%)"></div>
   ${artOn ? html`<div style="${pos(40, 40, 300, 300)}border-radius:10px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.06)">${artBox(vm)}</div>
-  <div class="s-lab" style="${pos(40, 356)}">${t('now_playing_on').toUpperCase()}</div>
+  <div class="s-lab" style="${pos(40, 356)}">${t('now_playing_on').toLocaleUpperCase('el')}</div>
   <div class="s-out" style="${pos(40, 372, 300)}">${vm.out ? vm.outName(vm.out) : '—'}</div>
   <div class="s-src" style="${pos(40, 394, 300)}">${vm.srcLine}</div>` : nothing}
   <div class="s-status" style="${pos(X, 44)}">${statusHTML(vm)}</div>
@@ -115,11 +115,11 @@ export function streamerWide(vm: VM): TemplateResult {
   ${sh('meters') ? html`<div class="s-ch" style="${pos(X, 298)}">L</div><div class="s-ch" style="${pos(X, 308)}">R</div>
     <canvas data-cv="mtr" width=${(IW - 14) * 2} height="40" style="${pos(X + 14, 300, IW - 14, 20)}"></canvas>` : nothing}
   ${btns}
-  ${vm.caps.stop ? html`<button type="button" class="tb pill" style="${pos(x + 6, 366, 70, 20)}" @click=${() => vm.key('stop')}>■ ${t('stop').toUpperCase()}</button>` : nothing}
+  ${vm.caps.stop ? html`<button type="button" class="tb pill" style="${pos(x + 6, 366, 70, 20)}" @click=${() => vm.key('stop')}>■ ${t('stop').toLocaleUpperCase('el')}</button>` : nothing}
   <div style="${pos(884, 40, 1, 380)}background:linear-gradient(180deg,transparent,rgba(128,128,128,.2),transparent)"></div>
   ${sh('volume') ? html`${knob('s', 1035, 140, 120, KNOB_DARK, 18, t('volume'))}
-    <div class="s-vol" style="${pos(955, 230, 160)}">${t('volume').toUpperCase()} <b data-k="vv">—</b></div>` : nothing}
-  ${sh('outputs') ? html`<div class="s-lab" style="${pos(912, 258)}">${t('play_on').toUpperCase()}</div>
+    <div class="s-vol" style="${pos(955, 230, 160)}">${t('volume').toLocaleUpperCase('el')} <b data-k="vv">—</b></div>` : nothing}
+  ${sh('outputs') ? html`<div class="s-lab" style="${pos(912, 258)}">${t('play_on').toLocaleUpperCase('el')}</div>
     ${many ? outputSelect(vm, 's', pos(912, 276, 240, 30)) : vm.outputs.map((o, i) => html`<button type="button" class="ob ${i === vm.sel ? 'on' : ''} ${o.na ? 'na' : ''}" style="${pos(912 + (i % 2) * 124, 274 + Math.floor(i / 2) * 31, 116, 26)}" @click=${() => vm.pick(i)}><span class="od"></span>${vm.outName(o)}</button>`)}` : nothing}
   <div style="position:absolute;right:30px;top:20px;z-index:3">${themeToggle(vm, 'rgba(128,128,128,.14)')}</div>`;
 }
@@ -148,7 +148,7 @@ export function consoleWide(vm: VM): TemplateResult {
   const step = n > 1 ? 120 / (n - 1) : 0;
   const selA = list ? -60 + vm.sel * step : 0;
   const on = (k: string) => (k === 'play' && vm.status === 'playing') || (k === 'pause' && vm.status === 'paused') || (k === 'stop' && vm.status === 'idle');
-  const mode = vm.status === 'playing' ? `▶ ${t('play').toUpperCase()}` : vm.status === 'paused' ? `❚❚ ${t('pause').toUpperCase()}` : vm.status === 'unavailable' ? `— ${t('offline').toUpperCase()}` : `■ ${t('stop').toUpperCase()}`;
+  const mode = vm.status === 'playing' ? `▶ ${t('play').toLocaleUpperCase('el')}` : vm.status === 'paused' ? `❚❚ ${t('pause').toLocaleUpperCase('el')}` : vm.status === 'unavailable' ? `— ${t('offline').toLocaleUpperCase('el')}` : `■ ${t('stop').toLocaleUpperCase('el')}`;
   const meters = sh('meters');
   const DX = meters ? 490 : 60, DW = meters ? 426 : 856;
   return html`
@@ -159,9 +159,9 @@ export function consoleWide(vm: VM): TemplateResult {
   ${vm.model ? html`<div class="c-lab" style="${pos(vm.themeSwitch ? 400 : 640, 29, 460)}text-align:${vm.themeSwitch ? 'right' : 'left'};font-size:10px;letter-spacing:.26em">${vm.model}</div>` : nothing}
   <div class="${vm.light ? '' : 'dim'}">${meters ? html`${vu(60, 56, 200, 160, 'L', t('left'))}${vu(274, 56, 200, 160, 'R', t('right'))}` : nothing}</div>
   <div style="${pos(DX, 56, DW, 160)}border-radius:6px;background:radial-gradient(ellipse at 50% 130%,#1a1006 0%,#050403 70%);overflow:hidden;${WELL}">
-    <div class="vfd-s" style="${pos(16, 12, DW - 32)}">${mode} · ${(vm.out ? vm.outName(vm.out) : '—').toUpperCase()}</div>
-    <div class="vfd" style="${pos(16, 32, DW - 32)}font-size:${tsize}px;letter-spacing:.1em">${vm.title.toUpperCase()}</div>
-    <div class="vfd-s" style="${pos(16, 62, DW - 32)}font-size:12px">${vm.artist.toUpperCase()}</div>
+    <div class="vfd-s" style="${pos(16, 12, DW - 32)}">${mode} · ${(vm.out ? vm.outName(vm.out) : '—').toLocaleUpperCase('el')}</div>
+    <div class="vfd" style="${pos(16, 32, DW - 32)}font-size:${tsize}px;letter-spacing:.1em">${vm.title.toLocaleUpperCase('el')}</div>
+    <div class="vfd-s" style="${pos(16, 62, DW - 32)}font-size:12px">${vm.artist.toLocaleUpperCase('el')}</div>
     <div class="vfd" data-k="cel" style="${pos(16, 86)}font-size:34px">0:00</div>
     <div class="vfd-s" data-k="crm" style="${pos(150, 100)}font-family:${VFD};font-size:15px;letter-spacing:0"></div>
     <div class="vfd-s" style="${pos(DW - 100, 90, 84)}text-align:right;letter-spacing:.14em">${vm.short}</div>
@@ -170,17 +170,17 @@ export function consoleWide(vm: VM): TemplateResult {
   </div>
   ${sh('spectrum') ? html`<div style="${pos(60, 238, 856, 70)}border-radius:6px;background:#050506;overflow:hidden;${WELL}">
     <canvas data-cv="spc" data-pal="c" width="1664" height="100" style="${pos(12, 10, 832, 50)}"></canvas>${GLASS}</div>` : nothing}
-  ${keys.map(([k, ic, l], i) => html`<button type="button" class="ck ${on(k) ? 'on' : ''}" style="${pos(60 + i * (kw + 8), 334, kw, 42)}" aria-label=${l} @click=${() => vm.key(k)}><span>${ic}</span><span>${l.toUpperCase()}</span></button>`)}
-  ${sh('switches') ? sw.map(([k, l, v], i) => html`<button type="button" class="tg ${v ? 'on' : ''}" aria-pressed=${v} style="${pos(60 + i * 150, 396)}" @click=${() => vm.key(k)}><span class="sw"><i></i></span><span class="tl">${l.toUpperCase()}</span></button>`) : nothing}
+  ${keys.map(([k, ic, l], i) => html`<button type="button" class="ck ${on(k) ? 'on' : ''}" style="${pos(60 + i * (kw + 8), 334, kw, 42)}" aria-label=${l} @click=${() => vm.key(k)}><span>${ic}</span><span>${l.toLocaleUpperCase('el')}</span></button>`)}
+  ${sh('switches') ? sw.map(([k, l, v], i) => html`<button type="button" class="tg ${v ? 'on' : ''}" aria-pressed=${v} style="${pos(60 + i * 150, 396)}" @click=${() => vm.key(k)}><span class="sw"><i></i></span><span class="tl">${l.toLocaleUpperCase('el')}</span></button>`) : nothing}
   ${sh('outputs') ? (list ? html`
     <button type="button" aria-label=${t('next_output')} style="${pos(936, 96, 72, 72)}border-radius:50%;cursor:pointer;background:radial-gradient(circle at 45% 30%,#f6f7f8,#b8bcc2 60%,#7c8188);box-shadow:inset 0 2px 2px rgba(255,255,255,.8),0 4px 8px rgba(0,0,0,.6),0 0 0 1px #000" @click=${vm.nextOutput}>
       <div style="${pos(34, 5, 4, 12)}border-radius:2px;background:#2b2e33;transform-origin:2px 31px;transform:rotate(${selA}deg)"></div></button>
-    ${vm.outputs.map((o, i) => html`<button type="button" class="cl ${i === vm.sel ? 'on' : ''} ${o.na ? 'na' : ''}" style="${pos(1030, 70 + i * (n > 1 ? 136 / (n - 1) : 0), 128)}" @click=${() => vm.pick(i)}><i class="cd"></i>${vm.outName(o).toUpperCase()}</button>`)}`
+    ${vm.outputs.map((o, i) => html`<button type="button" class="cl ${i === vm.sel ? 'on' : ''} ${o.na ? 'na' : ''}" style="${pos(1030, 70 + i * (n > 1 ? 136 / (n - 1) : 0), 128)}" @click=${() => vm.pick(i)}><i class="cd"></i>${vm.outName(o).toLocaleUpperCase('el')}</button>`)}`
     : outputSelect(vm, 'c', pos(940, 110, 210, 30)))
     : nothing}
-  ${sh('outputs') ? html`<div class="c-lab" style="${pos(912, 190, 120)}text-align:center;font-size:9px;letter-spacing:.3em">${t('output').toUpperCase()}</div>` : nothing}
+  ${sh('outputs') ? html`<div class="c-lab" style="${pos(912, 190, 120)}text-align:center;font-size:9px;letter-spacing:.3em">${t('output').toLocaleUpperCase('el')}</div>` : nothing}
   ${sh('volume') ? html`${knob('c', 1060, 330, 104, KNOB_ALU, 14, t('volume'))}
-    <div class="c-lab" style="${pos(990, 408, 140)}text-align:center;font-size:9px;letter-spacing:.3em">${t('volume').toUpperCase()} <b data-k="vv" style="color:#ffe2b0">—</b></div>` : nothing}
+    <div class="c-lab" style="${pos(990, 408, 140)}text-align:center;font-size:9px;letter-spacing:.3em">${t('volume').toLocaleUpperCase('el')} <b data-k="vv" style="color:#ffe2b0">—</b></div>` : nothing}
   <div style="position:absolute;right:30px;top:20px;z-index:3">${themeToggle(vm, '#0b0b0c')}</div>`;
 }
 
@@ -194,8 +194,8 @@ export function compact(vm: VM): TemplateResult {
         : sh('art') ? html`<div class="cp-art">${artBox(vm)}</div>` : nothing}
       <div class="cp-info ${con ? 'cp-vfd' : ''}">
         <div class="cp-status">${statusHTML(vm)}</div>
-        <div class="cp-title">${con ? vm.title.toUpperCase() : vm.title}</div>
-        <div class="cp-artist">${con ? vm.artist.toUpperCase() : vm.artist}</div>
+        <div class="cp-title">${con ? vm.title.toLocaleUpperCase('el') : vm.title}</div>
+        <div class="cp-artist">${con ? vm.artist.toLocaleUpperCase('el') : vm.artist}</div>
         ${sh('chips') && !con ? html`<div class="cp-chips">${vm.chips.map(([c, k]) => html`<span class="chip ${k}">${c}</span>`)}</div>` : nothing}
         ${sh('seek') ? html`<div class="cp-seek" @click=${vm.seek}><div data-k="pfill" data-w="%" class="cp-fill"></div></div>
           <div class="cp-times"><span data-k="el">0:00</span><span data-k="rm"></span></div>` : nothing}
