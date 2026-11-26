@@ -1,8 +1,13 @@
 name: Release
 
+# A release is made when package.json on main carries a version that has no tag yet:
+# bump "version", merge to main, and this workflow tests, tags and publishes it.
+# Versions with a hyphen (1.0.0-beta.1) are published as pre-releases.
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+    paths: [package.json]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -12,20 +17,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Version and tag
+        id: v
+        run: |
+          v="v$(node -p "require('./package.json').version")"
+          echo "tag=$v" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/$v" >/dev/null; then echo "exists=true" >> "$GITHUB_OUTPUT"; else echo "exists=false" >> "$GITHUB_OUTPUT"; fi
       - uses: actions/setup-node@v7
+        if: steps.v.outputs.exists == 'false'
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm run build
-      - run: npm run test:unit
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
-      - name: Check tag matches package.json
-        run: test "v$(node -p "require('./package.json').version")" = "${GITHUB_REF_NAME}"
+      - if: steps.v.outputs.exists == 'false'
+        run: npm ci
+      - if: steps.v.outputs.exists == 'false'
+        run: npm run typecheck && npm run build && npm run test:unit
+      - name: dist matches the source
+        if: steps.v.outputs.exists == 'false'
+        run: git diff --exit-code -- dist/
+      - if: steps.v.outputs.exists == 'false'
+        run: npx playwright install --with-deps chromium && npm run test:e2e
       - uses: softprops/action-gh-release@v3
+        if: steps.v.outputs.exists == 'false'
         with:
+          tag_name: ${{ steps.v.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.v.outputs.tag }}
           files: dist/hifi-music-player-card.js
           generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(steps.v.outputs.tag, '-') }}
