@@ -31,14 +31,14 @@ const entities = {
 const areas = { attic: { area_id: 'attic', name: 'Attic' }, kitchen: { area_id: 'kitchen', name: 'Kitchen' }, living: { area_id: 'living', name: 'Living room' }, yana: { area_id: 'yana', name: "Yana's room" } };
 const node = (title, id, cls, exp, play, extra = {}) => ({ title, media_content_id: id, media_class: cls, media_content_type: exp ? '' : 'audio/mpeg', can_expand: exp, can_play: play, children_media_class: null, thumbnail: null, ...extra });
 const tree = {
-  'media-source://': { title: 'Media', children: [node('My media', 'media-source://media_source', 'directory', true, false), node('Radio Browser', 'media-source://radio_browser', 'directory', true, false), node('Text-to-speech', 'media-source://tts', 'app', true, false), node('Camera', 'media-source://camera', 'video', true, false), node('Jellyfin', 'media-source://jellyfin', 'directory', true, false)] },
+  'media-source://': { title: 'Media', children: [node('My media', 'media-source://media_source', 'app', true, false), node('Radio Browser', 'media-source://radio_browser', 'app', true, false), node('Text-to-speech', 'media-source://tts', 'app', true, false), node('Camera', 'media-source://camera', 'app', true, false), node('Dahua', 'media-source://dahua', 'app', true, false), node('JellyHA', 'media-source://jellyha', 'app', true, false)] },
   'media-source://media_source': { title: 'My media', children: [node('Multimedia', 'media-source://media_source/local/Multimedia', 'directory', true, false), node('nas_music', 'media-source://media_source/local/nas_music', 'directory', true, false), node('Photos', 'media-source://media_source/local/Photos', 'directory', true, false, { children_media_class: 'image' })] },
   'media-source://media_source/local/Multimedia': { title: 'Multimedia', children: [node('Dire Straits', 'ms/ds', 'directory', true, false), node('Βασίλης Τσιτσάνης', 'ms/ts', 'directory', true, false), node('holiday.mp4', 'ms/v', 'video', false, true, { media_content_type: 'video/mp4' })] },
   'ms/ds': { title: 'Dire Straits', children: [node('01 Money for Nothing.mp3', 'ms/ds/1', 'music', false, true), node('02 Walk of Life.mp3', 'ms/ds/2', 'music', false, true), node('03 So Far Away.mp3', 'ms/ds/3', 'music', false, true)] },
 };
 window.calls = [];
 const hass = {
-  states, entities, areas, devices: {}, language: q.get('lang') || 'en', locale: { language: q.get('lang') || 'en' }, themes: { darkMode: true },
+  services: { jellyha: { search: {}, play_music: {} } }, states, entities, areas, devices: {}, language: q.get('lang') || 'en', locale: { language: q.get('lang') || 'en' }, themes: { darkMode: true },
   hassUrl: (p) => 'http://ha.local' + p,
   callService: async (d, s, data, target) => { window.calls.push([d, s, data, target]); return {}; },
   callWS: async (m) => {
@@ -46,6 +46,15 @@ const hass = {
     if (m.type === 'media_source/browse_media') { const n = tree[m.media_content_id]; if (!n) throw new Error('not found'); return { ...n, media_content_id: m.media_content_id, media_class: 'directory', can_expand: true, can_play: false }; }
     if (m.type === 'config_entries/get') return [{ entry_id: 'MAENTRY', state: 'loaded' }];
     if (m.type === 'call_service' && m.service === 'get_library') return { response: { items: [{ name: 'Love over Gold', media_type: 'album', uri: 'library://album/1', artists: [{ name: 'Dire Straits' }] }] } };
+    if (m.type === 'call_service' && m.domain === 'jellyha' && m.service === 'search') {
+      const d = m.service_data;
+      if (d.media_type === 'MusicAlbum' && !d.query) return { response: { items: (d.offset || 0) ? [] : [
+        { id: 'a1', name: '   ', path: '/mnt/media/music/9910 Hellas/70s' }, { id: 'a2', name: '   ', path: '/mnt/media/music/9910 Hellas/02 DIAFORA' },
+        { id: 'a3', name: 'Brothers in Arms', path: '/mnt/media/music/Rock/Dire Straits/Brothers in Arms' }] } };
+      if (d.media_type === 'Audio') return { response: { items: [{ id: 't1', name: 'So Far Away', artist_name: 'Dire Straits', track_number: 1, duration_seconds: 300, stream_url: '/api/jellyha/stream/x/t1' }, { id: 't2', name: 'Money for Nothing', artist_name: 'Dire Straits', track_number: 2, duration_seconds: 500, stream_url: '/api/jellyha/stream/x/t2' }] } };
+      return { response: { items: [] } };
+    }
+    if (m.type === 'call_service' && m.domain === 'jellyha' && m.service === 'get_playlists') return { response: { playlists: [{ id: 'p1', name: 'Morning Coffee' }] } };
     if (m.type === 'media_source/resolve_media') return { url: '/media/local/x.mp3' };
     return {};
   },

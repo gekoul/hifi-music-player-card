@@ -15,12 +15,17 @@ interface Item {
   dur?: number;
   nav?: boolean;      // opens a column
   play?: boolean;     // can be played
-  src?: 'ms' | 'ma' | 'pb' | 'sec';
+  src?: 'ms' | 'ma' | 'pb' | 'sec' | 'jh';
   id?: string;        // media_content_id / MA uri / section key
   ctype?: string;     // media_content_type / MA media type
   mclass?: string;
   entity?: string;    // entity used to browse (pb)
+  jk?: 'tree' | 'dir' | 'album' | 'playlists' | 'playlist' | 'track';  // JellyHA item kind
+  jdir?: JhNode;
+  url?: string;       // JellyHA signed stream URL
+  album?: string;
 }
+interface JhNode { name: string; rel: string; dirs: JhNode[]; map: Map<string, JhNode>; albumId?: string }
 interface Col {
   title: string;
   items: Item[];
@@ -45,10 +50,12 @@ interface BrowseNode {
 }
 
 const NOT_MUSIC_CLASS = new Set(['video', 'movie', 'tv_show', 'season', 'episode', 'image', 'game', 'app']);
-const NOT_MUSIC_SOURCE = /^media-source:\/\/(tts|camera|image_upload|frigate|xbox|google_photos|nest|ring|reolink|synology_dsm|immich|motioneye|unifiprotect|ai_task|image)(\/|$)/;
+const NOT_MUSIC_SOURCE = /^media-source:\/\/(tts|camera|image_upload|frigate|xbox|google_photos|nest|ring|reolink|synology_dsm|immich|motioneye|unifiprotect|ai_task|image|dahua|hikvision|blink|eufy|onvif|llmvision)(\/|$)/;
+const NOT_MUSIC_TYPE = new Set(['movie', 'movies', 'tvshow', 'tv_show', 'tvshows', 'episode', 'season', 'video', 'videos']);
+const JH_CACHE = 'hifi_jh_folders_v1';
 const SOURCE_KEYS: Record<string, RegExp> = {
   folders: /^media-source:\/\/media_source(\/|$)/,
-  jellyfin: /^media-source:\/\/jellyfin(\/|$)/,
+  jellyfin: /^media-source:\/\/(jellyfin|jellyha)(\/|$)/,
   dlna: /^media-source:\/\/dlna_dms(\/|$)/,
   radio: /^media-source:\/\/radio_browser(\/|$)/,
   plex: /^media-source:\/\/plex(\/|$)/,
@@ -146,6 +153,8 @@ export class HifiLibrary extends LitElement {
     if (NOT_MUSIC_CLASS.has(n.media_class)) return false;
     if (n.children_media_class && NOT_MUSIC_CLASS.has(n.children_media_class)) return false;
     if (/^(video|image)\//.test(n.media_content_type || '')) return false;
+    if (NOT_MUSIC_TYPE.has(String(n.media_content_type || '').toLowerCase())) return false;
+    if (/\/livetv(\/|$)/.test(n.media_content_id)) return false;
     return true;
   }
   private _msItem(n: BrowseNode, src: 'ms' | 'pb' = 'ms', entity?: string): Item {
@@ -160,6 +169,66 @@ export class HifiLibrary extends LitElement {
   }
   private _url(u: string) { return u.startsWith('/') && this.hass?.hassUrl ? this.hass.hassUrl(u) : u; }
   private _want(key: string) { const s = this.cfg.sources; return !s || s === 'auto' || s.includes(key); }
+
+  // ── JellyHA (custom Jellyfin integration): folder tree from album paths, signed streams ──
+  private _hasJH() { return !!(this.hass as any)?.services?.jellyha?.search; }
+  private _jh(d: Record<string, any>) { return this._svc('jellyha', 'search', d); }
+  private _jhTrack(x: any): Item {
+    return {
+      src: 'jh', jk: 'track', id: x.id, t: fixText(x.name).trim() || fixText(String(x.path || '').split('/').pop()), s: fixText(x.artist_name),
+      ic: 'mdi:music-note', img: x.image_url ? this._url(x.image_url) : undefined, dur: x.duration_seconds, play: true, url: x.stream_url ? this._url(x.stream_url) : undefined,
+      album: fixText(x.album),
+    };
+  }
+  private async _jhTracks(parentId: string): Promise<Item[]> {
+    let off = 0, all: any[] = [];
+    for (let i = 0; i < 40; i++) {
+      const r = await this._jh({ parent_id: parentId, media_type: 'Audio', limit: 50, offset: off, sort_by: 'SortName', sort_order: 'Ascending' });
+      const got = r?.items || []; all = all.concat(got); off += got.length;
+      if (got.length < 50) break;
+    }
+    all.sort((a, b) => ((a.disc_number || 0) - (b.disc_number || 0)) || ((a.track_number || 0) - (b.track_number || 0)) || String(a.path).localeCompare(String(b.path)));
+    return all.map((x) => this._jhTrack(x));
+  }
+  private _jhDir(n: JhNode): Item {
+    return { src: 'jh', jk: 'dir', jdir: n, t: n.name, s: n.dirs.length ? `${n.dirs.length} ${this.t('folders').toLowerCase()}` : undefined,
+      ic: n.dirs.length ? 'mdi:folder' : 'mdi:folder-music', nav: true, play: !!n.albumId, mclass: 'directory', id: n.albumId };
+  }
+  private _jhRoot?: JhNode;
+  private async _jhTree(progress: (n: number) => void): Promise<JhNode> {
+    if (this._jhRoot) return this._jhRoot;
+    let list: [string, string][] | null = null;
+    try { const c = JSON.parse(localStorage.getItem(JH_CACHE) || 'null'); if (c && Date.now() - c.t < (this.cfg.cache_hours ?? 12) * 3600e3) list = c.a; } catch { /* no cache */ }
+    if (!list) {
+      list = [];
+      for (let off = 0, i = 0; i < 400; i++) {
+        const r = await this._jh({ media_type: 'MusicAlbum', limit: 50, offset: off, sort_by: 'SortName', sort_order: 'Ascending' });
+        const got = r?.items || [];
+        got.forEach((x: any) => { const p = x.path || x.filepath; if (p) list!.push([x.id, p]); });
+        off += got.length; progress(list.length);
+        if (got.length < 50) break;
+      }
+      try { localStorage.setItem(JH_CACHE, JSON.stringify({ t: Date.now(), a: list })); } catch { /* storage full or blocked */ }
+    }
+    // drop the common prefix (e.g. /mnt/media/music)
+    const parts = list.map(([, p]) => p.split('/').filter(Boolean));
+    let common = parts.length ? parts[0].slice(0, -1) : [];
+    parts.forEach((p) => { let i = 0; while (i < common.length && i < p.length - 1 && common[i] === p[i]) i++; common = common.slice(0, i); });
+    const root: JhNode = { name: '/', rel: '', dirs: [], map: new Map() };
+    list.forEach(([id, p]) => {
+      let n = root;
+      const seg = p.split('/').filter(Boolean).slice(common.length);
+      seg.forEach((sg, i) => {
+        let c = n.map.get(sg);
+        if (!c) { c = { name: fixText(sg), rel: (n.rel ? n.rel + ' / ' : '') + fixText(sg), dirs: [], map: new Map() }; n.map.set(sg, c); n.dirs.push(c); }
+        n = c;
+        if (i === seg.length - 1) n.albumId = id;
+      });
+    });
+    const sortRec = (n: JhNode) => { n.dirs.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })); n.dirs.forEach(sortRec); };
+    sortRec(root);
+    return (this._jhRoot = root);
+  }
 
   private async _maEntryId(): Promise<string | null> {
     if (this._maEntry !== undefined) return this._maEntry;
@@ -187,7 +256,8 @@ export class HifiLibrary extends LitElement {
     this._cols = [{ title: this.t('sources'), items: [...items, { kind: 'msg', t: this.t('loading') }] }];
     let root: BrowseNode | null = null;
     try { root = await this._browseMS('media-source://'); } catch { root = null; }
-    const kids = (root?.children || []).filter((n) => !NOT_MUSIC_SOURCE.test(n.media_content_id) && this._audioOnly(n));
+    // every top-level source has media_class "app": filter by source id only
+    const kids = (root?.children || []).filter((n) => !NOT_MUSIC_SOURCE.test(n.media_content_id));
     // Local media: list its folders directly
     const local = kids.find((n) => SOURCE_KEYS.folders.test(n.media_content_id));
     let startItem: Item | undefined;
@@ -217,11 +287,20 @@ export class HifiLibrary extends LitElement {
     });
     const plex = this._want('plex') && !others.some((n) => SOURCE_KEYS.plex.test(n.media_content_id))
       ? Object.values(this.hass!.entities || {}).find((e) => e.platform === 'plex' && e.entity_id.startsWith('media_player.') && this.hass!.states[e.entity_id]?.state !== 'unavailable') : undefined;
-    if (others.length || plex) {
+    const jh = this._want('jellyfin') && this._hasJH();
+    let jhTree: Item | undefined;
+    if (others.length || plex || jh) {
       items.push({ kind: 'head', t: this.t('library') });
+      if (jh) {
+        jhTree = { src: 'jh', jk: 'tree', t: 'Jellyfin · ' + this.t('folders'), ic: 'mdi:folder-music', nav: true };
+        items.push(jhTree, { src: 'jh', jk: 'playlists', t: 'Jellyfin · ' + this.t('playlists'), ic: 'mdi:playlist-music', nav: true });
+      }
       others.forEach((n) => items.push({ ...this._msItem(n), ic: n.media_content_id.includes('radio_browser') ? 'mdi:radio' : 'mdi:bookshelf', play: false }));
       if (plex) items.push({ src: 'pb', entity: plex.entity_id, t: 'Plex', ic: 'mdi:plex', nav: true });
     }
+    // only open a start folder that has something in it; otherwise Jellyfin folders
+    if (startItem) { try { const n = await this._browseMS(startItem.id!); if (!(n.children || []).some((x) => this._audioOnly(x))) startItem = undefined; } catch { startItem = undefined; } }
+    if (!startItem && jhTree) startItem = jhTree;
     if (!items.length) items.push({ kind: 'msg', t: this.t('nothing_here') });
     this._cols = [{ title: this.t('sources'), items }];
     // open the start folder
@@ -277,6 +356,21 @@ export class HifiLibrary extends LitElement {
         nc.paged = { media_type: k, offset: 0, size: 200 };
         await this._page(nc);
       }
+    } else if (it.src === 'jh') {
+      if (it.jk === 'tree') {
+        const root = await this._jhTree((n) => { nc.items = [{ kind: 'msg', t: `${this.t('loading')} ${n}` }]; this._cols = [...this._cols]; });
+        nc.items = root.dirs.map((d) => this._jhDir(d));
+      } else if (it.jk === 'dir') {
+        const n = it.jdir!;
+        nc.items = n.dirs.map((d) => this._jhDir(d));
+        if (n.albumId) { nc.wide = true; nc.playAll = { ...it, jk: 'album' }; nc.items = nc.items.concat(await this._jhTracks(n.albumId)); }
+      } else if (it.jk === 'playlists') {
+        const r = await this._svc('jellyha', 'get_playlists', { limit: 500 });
+        nc.items = (r?.playlists || []).map((x: any) => ({ src: 'jh' as const, jk: 'playlist' as const, id: x.id, t: fixText(x.name), ic: 'mdi:playlist-music',
+          img: x.image_url ? this._url(x.image_url) : undefined, nav: true, play: true }));
+      } else if (it.jk === 'playlist' || it.jk === 'album') {
+        nc.items = await this._jhTracks(it.id!); nc.wide = true; nc.playAll = it;
+      }
     } else if (it.src === 'ma') {
       const ent = this._maBrowse || (this.output?.ma ? this.output.entity : undefined);
       if (!ent) throw new Error('No Music Assistant player');
@@ -312,6 +406,20 @@ export class HifiLibrary extends LitElement {
         const r = await this._svc('music_assistant', 'search', { config_entry_id: this._maEntry, name: term, limit: 12 });
         ([['artists', r?.artists], ['albums', r?.albums], ['tracks', r?.tracks], ['playlists', r?.playlists], ['radio', r?.radio]] as const)
           .forEach(([h, list]) => { if (list?.length) { nc.items.push({ kind: 'head', t: this.t(h) }); list.forEach((x: any) => nc.items.push(this._maItem(x))); } });
+      }
+      if (this._want('jellyfin') && this._hasJH()) {
+        const [al, tr] = await Promise.all([
+          this._jh({ query: term, media_type: 'MusicAlbum', limit: 20, sort_by: 'SortName', sort_order: 'Ascending' }).catch(() => null),
+          this._jh({ query: term, media_type: 'Audio', limit: 30, sort_by: 'SortName', sort_order: 'Ascending' }).catch(() => null),
+        ]);
+        if (al?.items?.length) { nc.items.push({ kind: 'head', t: 'Jellyfin · ' + this.t('albums') }); al.items.forEach((x: any) => nc.items.push({ src: 'jh', jk: 'album', id: x.id, t: fixText(x.name).trim() || fixText(String(x.path || '').split('/').pop()), s: fixText(x.album_artist || x.artist_name), ic: 'mdi:album', img: x.image_url ? this._url(x.image_url) : undefined, nav: true, play: true })); }
+        if (tr?.items?.length) { nc.items.push({ kind: 'head', t: 'Jellyfin · ' + this.t('tracks') }); tr.items.forEach((x: any) => nc.items.push(this._jhTrack(x))); }
+        if (this._jhRoot) {
+          const hits: JhNode[] = [];
+          const walk = (n: JhNode) => n.dirs.forEach((d) => { if (hits.length < 20 && d.name.toLowerCase().includes(lt)) hits.push(d); walk(d); });
+          walk(this._jhRoot);
+          if (hits.length) { nc.items.push({ kind: 'head', t: 'Jellyfin · ' + this.t('folders') }); hits.forEach((d) => nc.items.push({ ...this._jhDir(d), s: d.rel })); }
+        }
       }
       // folders and files already seen (cache)
       const hits: Item[] = [];
@@ -351,6 +459,7 @@ export class HifiLibrary extends LitElement {
     if (!out || !this.hass) return;
     const name = this.outName;
     try {
+      if (it.src === 'jh') { await this._playJH(it, enqueue, col); return; }
       if (out.browser) {
         if (it.src !== 'ms') throw new Error(t('browser_cant'));
         let list: Item[];
@@ -388,6 +497,31 @@ export class HifiLibrary extends LitElement {
     } catch (e: any) {
       this._say(t('cant_play', { output: name, title: it.t, error: String(e?.message || e) }), false);
     }
+  }
+  private async _playJH(it: Item, enqueue: 'next' | 'add' | undefined, col?: Col) {
+    const out = this.output!, t = this.t, name = this.outName;
+    let tracks: Item[] = [], start = 0;
+    if (it.jk === 'track') {
+      const sib = (col?.items || []).filter((x) => x.jk === 'track');
+      tracks = sib.length ? sib : [it]; start = Math.max(0, sib.indexOf(it));
+    } else if (it.jk === 'dir' || it.jk === 'album' || it.jk === 'playlist') {
+      const id = it.jk === 'dir' ? it.jdir?.albumId : it.id;
+      if (!id) throw new Error(t('nothing_here'));
+      if (out.browser || it.jk === 'playlist') tracks = await this._jhTracks(id);
+    }
+    if (out.browser) {
+      const q = (x: Item) => ({ url: x.url!, title: x.t, artist: x.s, album: x.album, art: x.img, dur: x.dur });
+      const list = tracks.filter((x) => x.url);
+      if (!list.length) throw new Error(t('browser_cant'));
+      if (enqueue) { WebPlayer.append(WebPlayer.gen, q(it.jk === 'track' ? it : list[0])); this._say(t('queued_on', { output: name, title: it.t }), true); return; }
+      WebPlayer.load(list.map(q), Math.min(start, list.length - 1));
+    } else if (it.jk === 'playlist') {
+      await this.hass!.callService('jellyha', 'play_playlist', { entity_id: out.entity, playlist: it.id });
+    } else {
+      const id = it.jk === 'dir' ? it.jdir?.albumId : it.id;
+      await this.hass!.callService('jellyha', 'play_music', { entity_id: out.entity, item_id: id, ...(it.jk === 'track' ? {} : { search_type: 'album' }) });
+    }
+    this._say(t('playing_on', { output: name, title: it.t }), true);
   }
   private _say(text: string, ok: boolean) {
     this._toast = { text, ok };
@@ -456,7 +590,7 @@ export class HifiLibrary extends LitElement {
                 <span class="ri"><ha-icon icon=${it.ic || 'mdi:music'}></ha-icon>${it.img ? html`<img src=${it.img} loading="lazy" alt="" @error=${(e: Event) => (e.target as HTMLElement).remove()}>` : nothing}</span>
                 <span class="rt"><span class="rn">${it.t}</span>${it.s ? html`<span class="rs">${it.s}</span>` : nothing}</span>
                 ${ci && it.play ? html`<button type="button" class="rp" title=${t('play')} aria-label="${t('play')} ${it.t}" @click=${(e: Event) => { e.stopPropagation(); void this._play(it, undefined, c); }}>▶</button>
-                  ${this.caps?.enqueue || (it.src === 'ma' && this.output?.ma) ? html`<button type="button" class="rq" title=${t('play_next')} aria-label="${t('play_next')} ${it.t}" @click=${(e: Event) => { e.stopPropagation(); void this._play(it, 'next', c); }}>⤵</button>
+                  ${(it.src !== 'jh' && this.caps?.enqueue) || (it.src === 'ma' && this.output?.ma) || (it.src === 'jh' && this.output?.browser) ? html`<button type="button" class="rq" title=${t('play_next')} aria-label="${t('play_next')} ${it.t}" @click=${(e: Event) => { e.stopPropagation(); void this._play(it, 'next', c); }}>⤵</button>
                   <button type="button" class="rq" title=${t('add_queue')} aria-label="${t('add_queue')} ${it.t}" @click=${(e: Event) => { e.stopPropagation(); void this._play(it, 'add', c); }}>+</button>` : nothing}` : nothing}
                 ${it.dur ? html`<span class="rd">${fmt(it.dur)}</span>` : it.nav ? html`<span class="rc">›</span>` : nothing}
               </div>`)}
