@@ -60,7 +60,7 @@ const hass = {
       if (d.media_type === 'MusicAlbum' && !d.query) return { response: { items: (d.offset || 0) ? [] : [
         { id: 'a1', name: '   ', path: '/mnt/media/music/9910 Hellas/70s' }, { id: 'a2', name: '   ', path: '/mnt/media/music/9910 Hellas/02 DIAFORA' },
         { id: 'a3', name: 'Brothers in Arms', path: '/mnt/media/music/Rock/Dire Straits/Brothers in Arms' }] } };
-      if (d.media_type === 'Audio') return { response: { items: [{ id: 't1', name: 'So Far Away', artist_name: 'Dire Straits', track_number: 1, duration_seconds: 300, stream_url: '/api/jellyha/stream/x/t1' }, { id: 't2', name: 'Money for Nothing', artist_name: 'Dire Straits', track_number: 2, duration_seconds: 500, stream_url: '/api/jellyha/stream/x/t2' }] } };
+      if (d.media_type === 'Audio') return { response: { items: [{ id: 't1', name: 'So Far Away', artist_name: 'Dire Straits', track_number: 1, duration_seconds: 300, stream_url: '/api/jellyha/stream/x/t1' }, { id: 't2', name: 'Money for Nothing', artist_name: 'Dire Straits', track_number: 2, duration_seconds: 500, stream_url: '/api/jellyha/stream/x/t2' }, { id: 't3', name: 'Dostlar bizim halaya - come to dance with the whole village tonight under the stars (extended live version)', artist_name: 'Orhan Osman', track_number: 3, duration_seconds: 210, stream_url: '/api/jellyha/stream/x/t3' }] } };
       return { response: { items: [] } };
     }
     if (m.type === 'call_service' && m.domain === 'jellyha' && m.service === 'get_playlists') return { response: { playlists: [{ id: 'p1', name: 'Morning Coffee' }] } };

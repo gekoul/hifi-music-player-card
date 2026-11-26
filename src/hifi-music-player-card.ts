@@ -463,6 +463,8 @@ export class HifiMusicPlayerCard extends LitElement {
     const style = `--acc:${acc};--acc-ink:${ink(acc)}`;
     if (!this._outputs.length) return html`<ha-card class=${cls} style=${style}><div class="empty">${this._t('no_players')}</div></ha-card>`;
     const lib = this._libCfg();
+    const na = this._view(vm.out).attributes;
+    const now = vm.status === 'playing' || vm.status === 'paused' ? { id: na.media_content_id ? String(na.media_content_id) : undefined, title: na.media_title, artist: na.media_artist } : undefined;
     let body: TemplateResult;
     if (this._layout === 'wide') {
       body = html`<div class="wrap" style="height:${SH * this._scale}px"><div class="st ${this._theme}" style="transform:scale(${this._scale})">
@@ -472,12 +474,12 @@ export class HifiMusicPlayerCard extends LitElement {
     return html`<ha-card class=${cls} style=${style}>
       ${body}
       ${lib && this._layout !== 'mini' ? html`<hifi-library .hass=${this.hass} .cfg=${lib} .output=${vm.out} .caps=${vm.caps} .t=${this._t}
-        .theme=${this._theme} .outName=${vm.outName(vm.out || { id: '', name: '—' })} .storeKey=${this._key('lib')}></hifi-library>` : nothing}
+        .theme=${this._theme} .outName=${vm.outName(vm.out || { id: '', name: '—' })} .storeKey=${this._key('lib')} .now=${now}></hifi-library>` : nothing}
       ${this._dlg ? html`<div class="dlg" role="dialog" aria-modal="true" aria-label=${vm.title}
           @click=${(e: Event) => { if (e.target === e.currentTarget) this._dlg = false; }} @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') this._dlg = false; }}>
         <div class="dlg-in"><button type="button" class="dlg-x" aria-label="Close" @click=${() => { this._dlg = false; }}>✕</button>${compact(vm)}
         ${lib ? html`<hifi-library .hass=${this.hass} .cfg=${{ ...lib, view: 'list' }} .output=${vm.out} .caps=${vm.caps} .t=${this._t} .theme=${this._theme}
-          .outName=${vm.outName(vm.out || { id: '', name: '—' })} .storeKey=${this._key('lib')}></hifi-library>` : nothing}</div></div>` : nothing}
+          .outName=${vm.outName(vm.out || { id: '', name: '—' })} .storeKey=${this._key('lib')} .now=${now}></hifi-library>` : nothing}</div></div>` : nothing}
     </ha-card>`;
   }
 

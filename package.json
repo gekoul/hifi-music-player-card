@@ -1,6 +1,6 @@
 {
   "name": "hifi-music-player-card",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta.2",
   "description": "Hi-fi music player card for Home Assistant: two themes, auto-discovered outputs, built-in media browser",
   "type": "module",
   "license": "MIT",

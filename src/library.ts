@@ -75,13 +75,15 @@ const CLASS_ICON: Record<string, string> = {
 };
 const CACHE = 'hifi_lib_cache_v1';
 const MEM: Map<string, { t: number; n: any }> = (window as any).__hifiLibCache || ((window as any).__hifiLibCache = new Map());
+/** Title for matching: no file extension, no leading track number, lower case. */
+const normTitle = (s?: string) => String(s || '').toLowerCase().replace(/\.(mp3|flac|m4a|aac|ogg|opus|wav|wma|alac|aiff?)$/, '').replace(/^\s*(\d{1,3}[\s.\-_)]+)+/, '').replace(/\s+/g, ' ').trim();
 const shuffled = <T,>(a: T[]): T[] => { const r = [...a]; for (let i = r.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [r[i], r[j]] = [r[j], r[i]]; } return r; };
 const START_NAMES = /^(multimedia|music|μουσική|musik|musique|música)$/i;
 
 export class HifiLibrary extends LitElement {
   static override properties = {
     hass: { attribute: false }, cfg: { attribute: false }, output: { attribute: false }, caps: { attribute: false },
-    t: { attribute: false }, theme: {}, outName: {}, storeKey: {},
+    t: { attribute: false }, theme: {}, outName: {}, storeKey: {}, now: { attribute: false },
     _open: { state: true }, _cols: { state: true }, _toast: { state: true }, _narrow: { state: true },
   };
   hass?: HomeAssistant;
@@ -92,6 +94,34 @@ export class HifiLibrary extends LitElement {
   theme = 'streamer';
   outName = '';
   storeKey = 'hifi_lib';
+  /** What the selected output is playing: highlighted in the list and followed when the track changes. */
+  now?: { id?: string; title?: string; artist?: string };
+
+  private _isNow(it: Item) {
+    const n = this.now;
+    if (!n || it.kind || it.nav || !it.play) return false;
+    if (n.id && it.id && (n.id === it.id || n.id.endsWith('/' + it.id) || (it.url && n.id === it.url))) return true;
+    if (!n.title) return false;
+    const a = normTitle(it.t), b = normTitle(n.title);
+    if (!a || a !== b) return false;
+    return !n.artist || !it.s || normTitle(it.s).includes(normTitle(n.artist).split(',')[0]) || normTitle(n.artist).includes(normTitle(it.s));
+  }
+  private _nowKey = '';
+  /** When the playing track changes, select it in the right-most column and scroll it into view. */
+  private _followNow() {
+    const n = this.now, key = n ? `${n.id || ''}|${n.title || ''}|${n.artist || ''}` : '';
+    if (key === this._nowKey) return;
+    this._nowKey = key;
+    if (!key || !this._open) return;
+    const ci = this._cols.length - 1, col = this._cols[ci];
+    if (!col) return;
+    const ri = col.items.findIndex((x) => this._isNow(x));
+    if (ri < 0 || col.sel === ri) return;
+    col.sel = ri;
+    this._cols = [...this._cols];
+    void this.updateComplete.then(() => this.renderRoot.querySelector(`.r[data-c="${ci}"][data-r="${ri}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+  }
+  protected override updated(ch: PropertyValues) { if (ch.has('now')) this._followNow(); }
 
   private _open = false;
   private _cols: Col[] = [];
@@ -565,7 +595,7 @@ export class HifiLibrary extends LitElement {
     if (it.src !== 'ms') return null;
     const r = await this._ws<{ url: string; mime_type?: string }>({ type: 'media_source/resolve_media', media_content_id: it.id }).catch(() => null);
     if (!r?.url) return null;
-    return { url: this._url(r.url), title: it.t, artist: it.s, art: it.img };
+    return { id: it.id, url: this._url(r.url), title: it.t, artist: it.s, art: it.img };
   }
   /**
    * Plays an item. `order` is set by the column buttons: 'shuffle' plays the whole list in random order,
@@ -640,7 +670,7 @@ export class HifiLibrary extends LitElement {
       if (out.browser || it.jk === 'playlist') tracks = await this._jhTracks(id);
     }
     if (out.browser) {
-      const q = (x: Item) => ({ url: x.url!, title: x.t, artist: x.s, album: x.album, art: x.img, dur: x.dur });
+      const q = (x: Item) => ({ id: x.id, url: x.url!, title: x.t, artist: x.s, album: x.album, art: x.img, dur: x.dur });
       let list = tracks.filter((x) => x.url);
       if (!list.length) throw new Error(t('browser_cant'));
       if (enqueue) { WebPlayer.append(WebPlayer.gen, q(it.jk === 'track' ? it : list[0])); this._say(t('queued_on', { output: name, title: it.t }), true); return; }
@@ -706,14 +736,14 @@ export class HifiLibrary extends LitElement {
       </div>
       ${this._open ? html`<div class="mill" style="--lh:${this.cfg.height ?? 420}px" @keydown=${this._onKey}>
         ${this._toast ? html`<div class="toast ${this._toast.ok ? 'ok' : ''}" role="status">${this._toast.text}</div>` : nothing}
-        ${cols.map((c, k) => this._col(c, base + k, list))}
+        ${cols.map((c, k) => this._col(c, base + k, list, k === cols.length - 1))}
       </div>` : nothing}
     </div>`;
   }
-  private _col(c: Col, ci: number, list: boolean) {
+  private _col(c: Col, ci: number, list: boolean, last: boolean) {
     const t = this.t;
     const count = c.items.filter((x) => !x.kind).length;
-    return html`<div class="col ${c.wide || list ? 'wide' : ''}" role="list" aria-label=${c.title}>
+    return html`<div class="col ${c.wide || list ? 'wide' : ''} ${last ? 'last' : ''}" role="list" aria-label=${c.title}>
       <div class="ch">
         ${list && ci > 0 ? html`<button type="button" class="back" aria-label=${t('back')} @click=${() => { this._cols = this._cols.slice(0, ci); }}>‹</button>` : nothing}
         <span class="ct">${c.title}</span>${ci && count ? html`<span class="cn">${count}${c.paged?.more ? '+' : ''}</span>` : nothing}
@@ -724,13 +754,14 @@ export class HifiLibrary extends LitElement {
         ${c.loading ? html`<div class="msg">${t('loading')}</div>` : c.err ? html`<div class="msg">${t('could_not_load', { error: c.err })}</div>`
           : !c.items.length ? html`<div class="msg">${t('nothing_here')}</div>`
             : c.items.map((it, ri) => it.kind === 'head' ? html`<div class="hd">${it.t.toLocaleUpperCase('el')}</div>` : it.kind === 'msg' ? html`<div class="msg">${it.t}</div>`
-              : html`<div class="r ${it.mclass === 'directory' ? 'dir' : ''} ${c.sel === ri ? 'sel' : ''}" role="listitem" tabindex="0" aria-current=${c.sel === ri ? 'true' : 'false'}
-                  data-c=${ci} data-r=${ri} @click=${() => this._openRow(ci, ri)}>
+              : html`<div class="r ${it.mclass === 'directory' ? 'dir' : ''} ${c.sel === ri ? 'sel' : ''} ${this._isNow(it) ? 'now' : ''}" role="listitem" tabindex="0" aria-current=${this._isNow(it) ? 'true' : c.sel === ri ? 'step' : 'false'}
+                  title=${[it.t, it.s].filter(Boolean).join(' — ')} data-c=${ci} data-r=${ri} @click=${() => this._openRow(ci, ri)}>
                 <span class="ri"><ha-icon icon=${it.ic || 'mdi:music'}></ha-icon>${it.img ? html`<img src=${it.img} loading="lazy" alt="" @error=${(e: Event) => (e.target as HTMLElement).remove()}>` : nothing}</span>
                 <span class="rt"><span class="rn">${it.t}</span>${it.s ? html`<span class="rs">${it.s}</span>` : nothing}</span>
-                ${ci && it.play ? html`<button type="button" class="rp" title=${t('play')} aria-label="${t('play')} ${it.t}" @click=${(e: Event) => { e.stopPropagation(); void this._play(it, undefined, c); }}>▶</button>
+                ${this._isNow(it) ? html`<span class="eq" aria-label=${t('playing')}><i></i><i></i><i></i></span>` : nothing}
+                ${ci && it.play ? html`<span class="acts"><button type="button" class="rp" title=${t('play')} aria-label="${t('play')} ${it.t}" @click=${(e: Event) => { e.stopPropagation(); void this._play(it, undefined, c); }}>▶</button>
                   ${(it.src !== 'jh' && this.caps?.enqueue) || (it.src === 'ma' && this.output?.ma) || (it.src === 'jh' && this.output?.browser) ? html`<button type="button" class="rq" title=${t('play_next')} aria-label="${t('play_next')} ${it.t}" @click=${(e: Event) => { e.stopPropagation(); void this._play(it, 'next', c); }}>⤵</button>
-                  <button type="button" class="rq" title=${t('add_queue')} aria-label="${t('add_queue')} ${it.t}" @click=${(e: Event) => { e.stopPropagation(); void this._play(it, 'add', c); }}>+</button>` : nothing}` : nothing}
+                  <button type="button" class="rq" title=${t('add_queue')} aria-label="${t('add_queue')} ${it.t}" @click=${(e: Event) => { e.stopPropagation(); void this._play(it, 'add', c); }}>+</button>` : nothing}</span>` : nothing}
                 ${it.dur ? html`<span class="rd">${fmt(it.dur)}</span>` : it.nav ? html`<span class="rc">›</span>` : nothing}
               </div>`)}
         ${c.paged?.more ? html`<button type="button" class="more" @click=${() => this._more(c)}>${t('load_more')}</button>` : nothing}
@@ -762,9 +793,12 @@ button:focus-visible,.r:focus-visible,input:focus-visible{outline:2px solid #7dd
 .q{display:flex;align-items:center;gap:6px;background:#0b0c0d;border:1px solid #333;border-radius:8px;padding:0 8px;min-width:180px;flex:0 1 320px;color:#6f6f6f}
 .q input{flex:1;min-width:0;background:none;border:none;outline:none;color:#eee;font-size:12px;padding:7px 0;font-family:inherit}
 .mill{display:flex;height:var(--lh,420px);overflow-x:auto;overflow-y:hidden;position:relative;border-top:1px solid rgba(255,255,255,.06)}
-.col{flex:0 0 232px;display:flex;flex-direction:column;border-right:1px solid rgba(255,255,255,.05);min-width:0;background:rgba(0,0,0,.18)}
-.col:first-child{flex-basis:210px;background:rgba(0,0,0,.28)}
-.col.wide{flex:1 0 340px}
+.col{flex:0 0 auto;width:max-content;min-width:190px;max-width:340px;display:flex;flex-direction:column;border-right:1px solid rgba(255,255,255,.05);background:rgba(0,0,0,.18)}
+.col:first-child{background:rgba(0,0,0,.28)}
+/* the right-most column takes the remaining width and never cuts a title: long ones wrap */
+.col.last{flex:1 0 auto;width:auto;min-width:300px;max-width:none}
+.col.last .rn,.col.last .rs{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+.col.wide:not(.last){max-width:420px}
 .ch{display:flex;align-items:center;gap:6px;padding:8px 10px 6px;border-bottom:1px solid rgba(255,255,255,.05);min-height:30px}
 .back{font-size:20px;line-height:1;color:var(--acc);padding:0 6px}
 .ct{flex:1;min-width:0;font-size:10px;letter-spacing:.12em;color:#8f8f8f;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -774,7 +808,17 @@ button:focus-visible,.r:focus-visible,input:focus-visible{outline:2px solid #7dd
 .rows{flex:1;overflow-y:auto;padding:2px 0 8px}
 .rows::-webkit-scrollbar,.mill::-webkit-scrollbar{width:6px;height:6px}.rows::-webkit-scrollbar-thumb,.mill::-webkit-scrollbar-thumb{background:#2c2d30;border-radius:3px}
 .hd{font-size:9px;letter-spacing:.18em;color:#6b737d;padding:12px 12px 4px}
-.r{display:flex;align-items:center;gap:8px;padding:5px 8px 5px 10px;cursor:pointer;border-left:2px solid transparent;user-select:none;min-height:32px}
+.r{position:relative;display:flex;align-items:center;gap:8px;padding:5px 10px 5px 10px;cursor:pointer;border-left:2px solid transparent;user-select:none;min-height:32px}
+.r.now .rn{color:var(--acc);font-weight:600}.r.now{background:color-mix(in srgb,var(--acc) 10%,transparent)}
+.eq{flex:none;display:flex;align-items:flex-end;gap:2px;height:12px}
+.eq i{width:3px;background:var(--acc);animation:eq 1s ease-in-out infinite}.eq i:nth-child(2){animation-delay:-.4s}.eq i:nth-child(3){animation-delay:-.7s}
+@keyframes eq{0%,100%{height:3px}50%{height:12px}}
+@media (prefers-reduced-motion: reduce){.eq i{animation:none;height:8px}}
+/* play / queue buttons float over the end of the row instead of taking room from the title */
+.acts{position:absolute;right:6px;top:50%;transform:translateY(-50%);display:flex;gap:4px;padding:2px 2px 2px 18px;opacity:0;pointer-events:none;
+  background:linear-gradient(90deg,transparent,#15171a 16px)}
+.r:hover .acts,.r:focus-within .acts,.col.last .r.sel .acts{opacity:1;pointer-events:auto}
+.col.last .acts{position:static;transform:none;background:none;padding:0}
 .r:hover{background:rgba(255,255,255,.04)}
 .r.sel{background:linear-gradient(90deg,color-mix(in srgb,var(--acc) 18%,transparent),transparent);border-left-color:var(--acc)}
 .r.sel .rn{color:#fff}
@@ -787,11 +831,11 @@ button:focus-visible,.r:focus-visible,input:focus-visible{outline:2px solid #7dd
 .rs{font-size:10px;color:#808080;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rd{font-size:10px;color:#6f6f6f;font-family:ui-monospace,Menlo,Consolas,monospace}
 .rc{color:#555;font-size:14px;width:10px;text-align:center}
-.rp,.rq{flex:none;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;opacity:0}
+.rp,.rq{flex:none;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;background:#15171a}
 .rp{border:1px solid var(--acc);color:var(--acc)}.rq{border:1px solid #444;color:#aaa}
 .rp:hover{background:var(--acc);color:var(--acc-ink,#000)}.rq:hover{color:#fff;border-color:#888}
-.r:hover .rp,.r:hover .rq,.r:focus-within .rp,.r:focus-within .rq,.r.sel .rp,.r.sel .rq,.rp:focus-visible,.rq:focus-visible{opacity:1}
-@media (hover:none){.rp,.rq{opacity:1}}
+
+@media (hover:none){.col.last .acts{opacity:1;pointer-events:auto;position:static;transform:none;background:none;padding:0}}
 .msg{padding:14px 12px;font-size:11px;color:#7a7a7a}
 .more{padding:8px 12px;font-size:10px;color:var(--acc)}
 .toast{position:sticky;left:12px;top:10px;z-index:3;align-self:flex-start;margin:10px 0 0 12px;max-width:min(560px,calc(100% - 24px));flex:none;position:absolute;padding:8px 12px;border-radius:8px;background:rgba(40,12,10,.96);border:1px solid rgba(255,90,78,.5);color:#ffb3ac;font-size:12px}
