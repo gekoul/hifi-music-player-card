@@ -117,7 +117,7 @@ Everything can be set in the visual editor. YAML reference:
 | Option | Default | What it does |
 | --- | --- | --- |
 | `library` | `true` | `false` hides the drawer |
-| `library.sources` | all found | `folders`, `music_assistant`, `jellyfin`, `plex`, `dlna`, `radio`, or a media-source id |
+| `library.sources` | all found | `folders`, `music_assistant`, `jellyfin`, `dlna`, `radio`, any integration name (`plex`, `sonos`, `kodi`…) or a media-source id |
 | `library.folders` | — | Pinned folders: `{path, name}` |
 | `library.start` | Multimedia/Music if found | Folder the drawer opens in |
 | `library.open` | `collapsed` | `expanded` to open on load (then remembered per browser) |
@@ -125,6 +125,18 @@ Everything can be set in the visual editor. YAML reference:
 | `library.view` | `columns` | `columns` or `list` (phones always use list) |
 | `library.audio_only` | `true` | Hide video and image files |
 | `library.cache_hours` | `12` | How long folder listings are cached in the browser |
+
+## How the media browser finds your music
+
+The drawer looks at what your Home Assistant already has and lists only music. Nothing is configured per integration:
+
+1. **Home Assistant media sources**: local folders and network shares, Radio Browser, DLNA servers, Jellyfin, JellyHA and any other integration that adds one. Cameras, text-to-speech, images and video libraries are left out, as are movie, TV and Live TV branches inside a source.
+2. **Libraries reached through an integration's players**: Plex, Emby, Kodi, Squeezebox, Spotify, Sonos, Roon, OwnTone, MPD, Volumio and others. One player of each integration is asked for its library. Integrations whose players only list apps (TVs, PCs) are skipped.
+3. **Music Assistant**: favourites, artists, albums, playlists and radio.
+4. **JellyHA**: your Jellyfin music as its real folder tree, plus playlists.
+5. **On this player**: the selected output's own content, such as WiiM or Sonos presets, favourites and queue. It changes with the output.
+
+Use `library.sources` to limit the list, by the keys above (`folders`, `music_assistant`, `jellyfin`, `radio`, `dlna`) or by any integration name (`plex`, `sonos`, `kodi`, …).
 
 ## Network shares (Samba / NFS)
 
@@ -137,7 +149,7 @@ The card never connects to a share itself. Add the share once in Home Assistant:
 - Browsers need one tap before audio starts (autoplay rule).
 - Streams from other servers without CORS headers still play, but without levels.
 - Playback stops when the tab closes or the device sleeps.
-- Music Assistant library items can't play here. Folders, Jellyfin and other media-source items can.
+- Music Assistant library items and libraries reached through other players (Plex, Sonos…) can't play here. Folders, Jellyfin/JellyHA and other media-source items can.
 
 ## Player compatibility
 

@@ -53,6 +53,15 @@ const NOT_MUSIC_CLASS = new Set(['video', 'movie', 'tv_show', 'season', 'episode
 const NOT_MUSIC_SOURCE = /^media-source:\/\/(tts|camera|image_upload|frigate|xbox|google_photos|nest|ring|reolink|synology_dsm|immich|motioneye|unifiprotect|ai_task|image|dahua|hikvision|blink|eufy|onvif|llmvision)(\/|$)/;
 const NOT_MUSIC_TYPE = new Set(['movie', 'movies', 'tvshow', 'tv_show', 'tvshows', 'episode', 'season', 'video', 'videos']);
 const JH_CACHE = 'hifi_jh_folders_v1';
+const PLATFORM_NAME: Record<string, string> = {
+  plex: 'Plex', sonos: 'Sonos', kodi: 'Kodi', squeezebox: 'Squeezebox', emby: 'Emby', spotify: 'Spotify', roon: 'Roon', heos: 'HEOS', bluesound: 'Bluesound',
+  volumio: 'Volumio', jellyfin: 'Jellyfin', mpd: 'MPD', forked_daapd: 'OwnTone', yamaha_musiccast: 'MusicCast', denonavr: 'Denon AVR', openhome: 'OpenHome',
+  linkplay: 'LinkPlay', bang_olufsen: 'Bang & Olufsen', russound_rio: 'Russound', arcam_fmj: 'Arcam', snapcast: 'Snapcast', frontier_silicon: 'Frontier Silicon',
+};
+/** Integrations whose players browse one shared library (the same from any of its players). */
+const SERVER_LIBS = new Set(['plex', 'emby', 'jellyfin', 'kodi', 'squeezebox', 'spotify', 'roon', 'forked_daapd', 'mpd', 'volumio', 'sonos', 'heos', 'bluesound',
+  'openhome', 'subsonic', 'navidrome', 'plexamp', 'tidal', 'deezer', 'youtube_music', 'qobuz', 'apple_music']);
+const PLATFORM_ICON: Record<string, string> = { plex: 'mdi:plex', spotify: 'mdi:spotify', kodi: 'mdi:kodi', sonos: 'mdi:speaker-multiple', emby: 'mdi:emby' };
 const SOURCE_KEYS: Record<string, RegExp> = {
   folders: /^media-source:\/\/media_source(\/|$)/,
   jellyfin: /^media-source:\/\/(jellyfin|jellyha)(\/|$)/,
@@ -105,6 +114,7 @@ export class HifiLibrary extends LitElement {
       this._open = saved ? saved === '1' : this.cfg.open === 'expanded';
     }
     if (this.hass && !this._inited && this._open) this._init();
+    if (ch.has('output') && this._inited && this._cols.length) void this._here();
   }
   private _toggle() {
     this._open = !this._open;
@@ -170,6 +180,41 @@ export class HifiLibrary extends LitElement {
   private _url(u: string) { return u.startsWith('/') && this.hass?.hassUrl ? this.hass.hassUrl(u) : u; }
   private _want(key: string) { const s = this.cfg.sources; return !s || s === 'auto' || s.includes(key); }
 
+  /**
+   * Finds integrations whose media players expose their own music library through browse_media.
+   * One entity per integration is probed; an integration is kept when its root lists something
+   * other than apps, TV inputs or Home Assistant's own media sources (which are listed already).
+   */
+  private async _playerLibraries(msDomains: Set<string>, jh: boolean): Promise<Item[]> {
+    const SKIP = new Set(['music_assistant', 'browser_mod', 'group', 'universal', 'media_extractor']);
+    if (jh) SKIP.add('jellyha');
+    const byPlatform = new Map<string, string[]>();
+    for (const e of Object.values(this.hass!.entities || {})) {
+      if (!e.entity_id.startsWith('media_player.') || !e.platform || SKIP.has(e.platform) || msDomains.has(e.platform)) continue;
+      const st = this.hass!.states[e.entity_id];
+      if (!st || !((Number(st.attributes.supported_features) || 0) & 131072)) continue;   // BROWSE_MEDIA
+      if (!this._want(e.platform)) continue;
+      const l = byPlatform.get(e.platform) || []; l.push(e.entity_id); byPlatform.set(e.platform, l);
+    }
+    // a library shared by every player of the integration; device content (presets, queue) is shown under "On this player" instead
+    for (const [p, l] of [...byPlatform]) if (!SERVER_LIBS.has(p) && l.length > 1) byPlatform.delete(p);
+    const NOT_LIB = new Set(['app', 'channel', 'url', 'game', 'video', 'movie', 'tv_show', 'image']);
+    const probe = async (platform: string, ents: string[]): Promise<Item | null> => {
+      const order = [...ents].sort((a, b) => Number(this.hass!.states[a]?.state === 'unavailable') - Number(this.hass!.states[b]?.state === 'unavailable'));
+      for (const ent of order.slice(0, 2)) {
+        try {
+          const n = await Promise.race([this._browseEntity(ent), new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))]);
+          const kids = (n.children || []).filter((c) => !c.media_content_id.startsWith('media-source://') && !NOT_LIB.has(c.media_class) && this._audioOnly(c));
+          if (!kids.length) return null;
+          return { src: 'pb', entity: ent, t: PLATFORM_NAME[platform] || platform.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase()), ic: PLATFORM_ICON[platform] || 'mdi:library-shelves', nav: true };
+        } catch { /* try the next entity */ }
+      }
+      return null;
+    };
+    const found = await Promise.all([...byPlatform.entries()].map(([p, e]) => probe(p, e)));
+    return found.filter((x): x is Item => !!x).sort((a, b) => a.t.localeCompare(b.t));
+  }
+
   // ── JellyHA (custom Jellyfin integration): folder tree from album paths, signed streams ──
   private _hasJH() { return !!(this.hass as any)?.services?.jellyha?.search; }
   private _jh(d: Record<string, any>) { return this._svc('jellyha', 'search', d); }
@@ -195,6 +240,35 @@ export class HifiLibrary extends LitElement {
       ic: n.dirs.length ? 'mdi:folder' : 'mdi:folder-music', nav: true, play: !!n.albumId, mclass: 'directory', id: n.albumId };
   }
   private _jhRoot?: JhNode;
+
+  /** The selected output's own content (presets, favourites, queue, its server library), when it has any. */
+  private _hereFor?: string;
+  private async _here() {
+    const o = this.output;
+    if (!this._cols.length || !o || this._hereFor === o.id) return;
+    this._hereFor = o.id;
+    const root = this._cols[0];
+    const drop = () => { root.items = root.items.filter((x) => !(x as any).here); };
+    if (o.browser || o.ma || !o.entity) { drop(); this._cols = [...this._cols]; return; }
+    const st = this.hass!.states[o.entity];
+    if (!st || !((Number(st.attributes.supported_features) || 0) & 131072)) { drop(); this._cols = [...this._cols]; return; }
+    let ok = false;
+    try {
+      const n = await this._browseEntity(o.entity);
+      ok = (n.children || []).some((c) => !c.media_content_id.startsWith('media-source://') && !['app', 'game', 'url'].includes(c.media_class) && this._audioOnly(c));
+    } catch { ok = false; }
+    if (this._hereFor !== o.id) return;
+    const before = root.items.length, selItem = root.sel !== undefined ? root.items[root.sel] : undefined;
+    const wasHere = !!(selItem as any)?.here;
+    drop();
+    if (ok) {
+      const item = { src: 'pb' as const, entity: o.entity, t: this.outName, ic: 'mdi:speaker', nav: true, here: true };
+      root.items.unshift({ kind: 'head', t: this.t('on_this_player'), here: true } as Item, item as Item);
+    }
+    void before;
+    if (wasHere) { root.sel = undefined; this._cols = [root]; }       // the open column belonged to the previous output
+    else { root.sel = selItem ? root.items.indexOf(selItem) : undefined; this._cols = [...this._cols]; }
+  }
   private async _jhTree(progress: (n: number) => void): Promise<JhNode> {
     if (this._jhRoot) return this._jhRoot;
     let list: [string, string][] | null = null;
@@ -283,26 +357,29 @@ export class HifiLibrary extends LitElement {
     // Other libraries (Jellyfin, DLNA servers, Radio Browser, Plex, …)
     const others = kids.filter((n) => !SOURCE_KEYS.folders.test(n.media_content_id)).filter((n) => {
       const k = Object.entries(SOURCE_KEYS).find(([, re]) => re.test(n.media_content_id))?.[0];
-      return k ? this._want(k) : this.cfg.sources === 'auto' || !this.cfg.sources || this.cfg.sources.includes(n.media_content_id);
+      const dom = n.media_content_id.replace('media-source://', '').split('/')[0];
+      return (k && this._want(k)) || this._want(dom) || (this.cfg.sources !== 'auto' && !!this.cfg.sources?.includes(n.media_content_id));
     });
-    const plex = this._want('plex') && !others.some((n) => SOURCE_KEYS.plex.test(n.media_content_id))
-      ? Object.values(this.hass!.entities || {}).find((e) => e.platform === 'plex' && e.entity_id.startsWith('media_player.') && this.hass!.states[e.entity_id]?.state !== 'unavailable') : undefined;
+    const msDomains = new Set(others.map((n) => n.media_content_id.replace('media-source://', '').split('/')[0]));
     const jh = this._want('jellyfin') && this._hasJH();
+    // libraries reached through an integration's players (Plex, Sonos, Kodi, Squeezebox, Emby, Spotify, Roon, …)
+    const players = await this._playerLibraries(msDomains, jh);
     let jhTree: Item | undefined;
-    if (others.length || plex || jh) {
+    if (others.length || players.length || jh) {
       items.push({ kind: 'head', t: this.t('library') });
       if (jh) {
         jhTree = { src: 'jh', jk: 'tree', t: 'Jellyfin · ' + this.t('folders'), ic: 'mdi:folder-music', nav: true };
         items.push(jhTree, { src: 'jh', jk: 'playlists', t: 'Jellyfin · ' + this.t('playlists'), ic: 'mdi:playlist-music', nav: true });
       }
       others.forEach((n) => items.push({ ...this._msItem(n), ic: n.media_content_id.includes('radio_browser') ? 'mdi:radio' : 'mdi:bookshelf', play: false }));
-      if (plex) items.push({ src: 'pb', entity: plex.entity_id, t: 'Plex', ic: 'mdi:plex', nav: true });
+      items.push(...players);
     }
     // only open a start folder that has something in it; otherwise Jellyfin folders
     if (startItem) { try { const n = await this._browseMS(startItem.id!); if (!(n.children || []).some((x) => this._audioOnly(x))) startItem = undefined; } catch { startItem = undefined; } }
     if (!startItem && jhTree) startItem = jhTree;
     if (!items.length) items.push({ kind: 'msg', t: this.t('nothing_here') });
     this._cols = [{ title: this.t('sources'), items }];
+    this._hereFor = undefined; void this._here();
     // open the start folder
     const start = this.cfg.start;
     if (start) { const it: Item = { src: 'ms', id: start, t: start.split('/').pop() || start, nav: true, play: true, mclass: 'directory' }; await this._push(0, it); }
@@ -340,7 +417,8 @@ export class HifiLibrary extends LitElement {
       }).catch(() => {});
     } else if (it.src === 'pb') {
       const n = await this._browseEntity(it.entity!, it.id, it.ctype);
-      const kids = (n.children || []).filter((x) => this._audioOnly(x));
+      // the media sources a player lists at its root are already in the drawer
+      const kids = (n.children || []).filter((x) => this._audioOnly(x) && !(it.id === undefined && x.media_content_id.startsWith('media-source://')) && !['app', 'game'].includes(x.media_class));
       nc.items = kids.map((x) => this._msItem(x, 'pb', it.entity));
       if (kids.some((x) => x.can_play && !x.can_expand)) { nc.wide = true; nc.playAll = it.id ? it : undefined; }
     } else if (it.src === 'sec') {

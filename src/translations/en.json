@@ -59,5 +59,6 @@
   "radio": "Radio",
   "recent": "Recently added",
   "search_results": "Search: {term}",
-  "step_only": "Step"
+  "step_only": "Step",
+  "on_this_player": "On this player"
 }

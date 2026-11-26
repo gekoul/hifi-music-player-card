@@ -19,6 +19,8 @@ const states = {
   'media_player.kitchen_echo': st('media_player.kitchen_echo', 'idle', { friendly_name: 'Kitchen Echo', supported_features: 1|4|8|512|16384 }),
   'media_player.tv': st('media_player.tv', 'off', { friendly_name: 'Living room TV', supported_features: 1|512|1024|16384 }),
   'media_player.yana': st('media_player.yana', 'unavailable', { friendly_name: "Yana's TV", supported_features: sf }),
+  'media_player.plex_office': st('media_player.plex_office', 'idle', { friendly_name: 'Plex (Office)', supported_features: 1|512|131072|16384 }),
+  'media_player.wiim_kitchen': st('media_player.wiim_kitchen', 'idle', { friendly_name: 'WiiM Kitchen', supported_features: sf }),
   'input_select.music_output': st('input_select.music_output', 'WiiM Attic', { options: ['WiiM Attic', 'Kitchen Echo'] }),
 };
 const entities = {
@@ -27,6 +29,8 @@ const entities = {
   'media_player.kitchen_echo': { entity_id: 'media_player.kitchen_echo', platform: 'alexa_devices', area_id: 'kitchen' },
   'media_player.tv': { entity_id: 'media_player.tv', platform: 'samsungtv', area_id: 'living' },
   'media_player.yana': { entity_id: 'media_player.yana', platform: 'samsungtv', area_id: 'yana' },
+  'media_player.plex_office': { entity_id: 'media_player.plex_office', platform: 'plex', area_id: 'living' },
+  'media_player.wiim_kitchen': { entity_id: 'media_player.wiim_kitchen', platform: 'linkplay', area_id: 'kitchen' },
 };
 const areas = { attic: { area_id: 'attic', name: 'Attic' }, kitchen: { area_id: 'kitchen', name: 'Kitchen' }, living: { area_id: 'living', name: 'Living room' }, yana: { area_id: 'yana', name: "Yana's room" } };
 const node = (title, id, cls, exp, play, extra = {}) => ({ title, media_content_id: id, media_class: cls, media_content_type: exp ? '' : 'audio/mpeg', can_expand: exp, can_play: play, children_media_class: null, thumbnail: null, ...extra });
@@ -44,6 +48,11 @@ const hass = {
   callWS: async (m) => {
     window.calls.push(['ws', m.type, m]);
     if (m.type === 'media_source/browse_media') { const n = tree[m.media_content_id]; if (!n) throw new Error('not found'); return { ...n, media_content_id: m.media_content_id, media_class: 'directory', can_expand: true, can_play: false }; }
+    if (m.type === 'media_player/browse_media') {
+      if (m.entity_id === 'media_player.plex_office') return m.media_content_id ? { title: 'Music', children: [node('Abbey Road', 'plex://album/1', 'album', true, true)] } : { title: 'Plex', children: [node('Music', 'plex://lib/music', 'directory', true, false), node('Movies', 'plex://lib/movies', 'directory', true, false, { children_media_class: 'movie' }), node('My media', 'media-source://media_source', 'app', true, false)] };
+      if (m.entity_id === 'media_player.wiim_kitchen' || m.entity_id === 'media_player.wiim_pro_1') return { title: 'WiiM', children: [node('Presets', 'wiim_library/library_root/favorites', 'directory', true, false), node('Queue', 'wiim_library/library_root/playlists', 'directory', true, false), node('Camera', 'media-source://camera', 'app', true, false)] };
+      return { title: 'x', children: [] };
+    }
     if (m.type === 'config_entries/get') return [{ entry_id: 'MAENTRY', state: 'loaded' }];
     if (m.type === 'call_service' && m.service === 'get_library') return { response: { items: [{ name: 'Love over Gold', media_type: 'album', uri: 'library://album/1', artists: [{ name: 'Dire Straits' }] }] } };
     if (m.type === 'call_service' && m.domain === 'jellyha' && m.service === 'search') {
