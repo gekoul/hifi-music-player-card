@@ -66,3 +66,10 @@ describe('discovery', () => {
     expect(buildOutputs(h, { type: 'x' }).map((o) => o.id)).toEqual(['media_player.x']);
   });
 });
+
+describe('discovery: review fixes', () => {
+  it('include selects non-Music-Assistant players even when Music Assistant is installed', () => {
+    const h = hass([['media_player.ma', 'music_assistant', { friendly_name: 'MA' }], ['media_player.sonos', 'sonos', { friendly_name: 'Sonos' }]]);
+    expect(buildOutputs(h, { type: 'x', discovery: { include: ['media_player.sonos'] } }).map((o) => o.id)).toEqual(['media_player.sonos']);
+  });
+});

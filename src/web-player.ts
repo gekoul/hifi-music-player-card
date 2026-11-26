@@ -34,7 +34,11 @@ class WebPlayerImpl {
   readonly subs = new Set<() => void>();
 
   constructor() {
-    setInterval(() => { if (this.active && !this.active.paused) this.emit(); }, 1000);
+    setInterval(() => {
+      if (!this.active || this.active.paused) return;
+      this.checkSilence();
+      this.emit();
+    }, 1000);
   }
 
   private mk() {
@@ -105,8 +109,8 @@ class WebPlayerImpl {
     else if (k === 'next') this.next();
     else if (k === 'prev') this.prev();
     else if (k === 'seek' && arg !== undefined) { try { a.currentTime = Math.max(0, arg); } catch { /* live */ } }
-    else if (k === 'mute') { a.muted = !a.muted; this.emit(); }
-    this.stopped = false;
+    else if (k === 'mute') { a.muted = !a.muted; this.emit(); return; }
+    if (['play', 'next', 'prev', 'seek'].includes(k)) this.stopped = false;
   }
   setVol(v: number) {
     [this.audio, this.audioX].forEach((x) => { if (x) x.volume = v; });
@@ -149,14 +153,26 @@ class WebPlayerImpl {
       spec[b] = Math.pow(mx / 255, 1.4);
     }
     const l = rms(an.L, an.tl), r = rms(an.R, an.tr);
-    // A cross-origin stream reads as silence through Web Audio (and plays muted): move it to the plain element.
-    if (l < 1e-6 && r < 1e-6 && this.audio.currentTime > 2) { if (++this.zero > 40) { this.fallback(); return null; } } else this.zero = 0;
     return { l: lvl(l), r: lvl(r), spec };
+  }
+  /**
+   * A stream from a server without CORS headers reads as exact digital zero through Web Audio and plays muted.
+   * Checked once a second from the player itself (so it works even when no card is drawing meters):
+   * after 4 s of exact zero the track moves to the plain element. Only that track: the next one tries Web Audio again.
+   */
+  private checkSilence() {
+    const an = this.an;
+    if (!an || !this.audio || this.active !== this.audio || this.audio.paused || this.audio.currentTime < 2) { this.zero = 0; return; }
+    an.L.getFloatTimeDomainData(an.tl); an.R.getFloatTimeDomainData(an.tr);
+    const zero = an.tl.every((x) => x === 0) && an.tr.every((x) => x === 0);
+    if (!zero) { this.zero = 0; return; }
+    if (++this.zero >= 4) this.fallback();
   }
   private fallback() {
     const old = this.audio!, t = old.currentTime, src = old.src;
     old.pause(); old.removeAttribute('src'); old.load();
-    this.noGraph = true; this.zero = 0;
+    this.zero = 0;
+    const cur = this.cur(); if (cur) cur.cross = true;
     const a = this.elX(); this.active = a; a.src = src;
     a.addEventListener('loadedmetadata', () => { try { a.currentTime = t; } catch { /* not seekable */ } }, { once: true });
     a.play().catch(() => this.emit());

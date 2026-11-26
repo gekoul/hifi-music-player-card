@@ -74,6 +74,7 @@ const CLASS_ICON: Record<string, string> = {
   track: 'mdi:music-note', podcast: 'mdi:podcast', genre: 'mdi:tag-music', channel: 'mdi:radio', radio: 'mdi:radio', composer: 'mdi:account-music',
 };
 const CACHE = 'hifi_lib_cache_v1';
+const MEM: Map<string, { t: number; n: any }> = (window as any).__hifiLibCache || ((window as any).__hifiLibCache = new Map());
 const shuffled = <T,>(a: T[]): T[] => { const r = [...a]; for (let i = r.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [r[i], r[j]] = [r[j], r[i]]; } return r; };
 const START_NAMES = /^(multimedia|music|μουσική|musik|musique|música)$/i;
 
@@ -109,14 +110,22 @@ export class HifiLibrary extends LitElement {
     this._ro.observe(this);
   }
   override disconnectedCallback() { super.disconnectedCallback(); this._ro?.disconnect(); }
+  private _cfgSig = '';
   protected override willUpdate(ch: PropertyValues) {
-    if (ch.has('cfg') && !this._inited) {
+    if (ch.has('cfg')) {
+      const sig = JSON.stringify(this.cfg);
+      if (this._inited && this._cfgSig && sig !== this._cfgSig) { this._inited = false; this._cols = []; this._jhRoot = undefined; }
+      this._cfgSig = sig;
+    }
+    if (ch.has('cfg') && !this._inited && !this._openSet) {
+      this._openSet = true;
       const saved = LS.get(this.storeKey + ':open');
       this._open = saved ? saved === '1' : this.cfg.open === 'expanded';
     }
     if (this.hass && !this._inited && this._open) this._init();
     if (ch.has('output') && this._inited && this._cols.length) void this._here();
   }
+  private _openSet = false;
   private _toggle() {
     this._open = !this._open;
     LS.set(this.storeKey + ':open', this._open ? '1' : '0');
@@ -130,26 +139,33 @@ export class HifiLibrary extends LitElement {
     if (target) msg.target = target;
     return (await this._ws<any>(msg))?.response;
   }
-  private _cacheGet(id: string): BrowseNode | null {
-    try {
-      const c = JSON.parse(localStorage.getItem(CACHE) || '{}');
-      const e = c[id];
-      if (e && Date.now() - e.t < (this.cfg.cache_hours ?? 12) * 3600e3) return e.n;
-    } catch { /* no cache */ }
-    return null;
+  /** Folder listings: kept in memory, and in localStorage up to ~1 MB (it is shared with Home Assistant's own data). */
+  private _cacheRead(id: string): { t: number; n: BrowseNode } | null {
+    const ttl = (this.cfg.cache_hours ?? 12) * 3600e3;
+    let e = MEM.get(id);
+    if (!e) {
+      try { e = JSON.parse(localStorage.getItem(CACHE) || '{}')[id]; if (e) MEM.set(id, e); } catch { e = undefined; }
+    }
+    return e && Date.now() - e.t < ttl ? e : null;
   }
   private _cachePut(id: string, n: BrowseNode) {
-    try {
-      const c = JSON.parse(localStorage.getItem(CACHE) || '{}');
-      const slim = { ...n, children: (n.children || []).map((x) => ({ title: x.title, media_class: x.media_class, media_content_id: x.media_content_id, media_content_type: x.media_content_type, can_play: x.can_play, can_expand: x.can_expand, children_media_class: x.children_media_class, thumbnail: x.thumbnail })) };
-      c[id] = { t: Date.now(), n: slim };
-      const keys = Object.keys(c);
-      if (keys.length > 150) keys.sort((a, b) => c[a].t - c[b].t).slice(0, keys.length - 150).forEach((k) => delete c[k]);
-      localStorage.setItem(CACHE, JSON.stringify(c));
-    } catch { /* storage full or blocked */ }
+    const slim: BrowseNode = { ...n, children: (n.children || []).slice(0, 2000).map((x) => ({ title: x.title, media_class: x.media_class, media_content_id: x.media_content_id, media_content_type: x.media_content_type, can_play: x.can_play, can_expand: x.can_expand, children_media_class: x.children_media_class, thumbnail: x.thumbnail })) };
+    const e = { t: Date.now(), n: slim };
+    MEM.set(id, e);
+    clearTimeout(this._saveT);
+    this._saveT = window.setTimeout(() => {
+      try {
+        const all = [...MEM.entries()].sort((a, b) => b[1].t - a[1].t);
+        const out: Record<string, unknown> = {};
+        let size = 2;
+        for (const [k, v] of all) { const len = JSON.stringify(v).length + k.length + 4; if (size + len > 1_000_000) break; out[k] = v; size += len; }
+        localStorage.setItem(CACHE, JSON.stringify(out));
+      } catch { /* storage full or blocked */ }
+    }, 1500);
   }
+  private _saveT = 0;
   private async _browseMS(id: string, fresh = false): Promise<BrowseNode> {
-    if (!fresh) { const c = this._cacheGet(id); if (c) return c; }
+    if (!fresh) { const c = this._cacheRead(id); if (c) return c.n; }
     const n = await this._ws<BrowseNode>({ type: 'media_source/browse_media', media_content_id: id });
     this._cachePut(id, n);
     return n;
@@ -283,7 +299,8 @@ export class HifiLibrary extends LitElement {
         off += got.length; progress(list.length);
         if (got.length < 50) break;
       }
-      try { localStorage.setItem(JH_CACHE, JSON.stringify({ t: Date.now(), a: list })); } catch { /* storage full or blocked */ }
+      // large libraries stay in memory only: localStorage is shared with Home Assistant's own data
+      try { const js = JSON.stringify({ t: Date.now(), a: list }); if (js.length < 1_500_000) localStorage.setItem(JH_CACHE, js); else localStorage.removeItem(JH_CACHE); } catch { /* storage full or blocked */ }
     }
     // drop the common prefix (e.g. /mnt/media/music)
     const parts = list.map(([, p]) => p.split('/').filter(Boolean));
@@ -320,8 +337,12 @@ export class HifiLibrary extends LitElement {
   }
 
   // ── root column ──
+  private _acted = false;
+  private _initGen = 0;
   private async _init() {
     this._inited = true;
+    const gen = ++this._initGen;
+    this._acted = false;
     const items: Item[] = [];
     const pins = this.cfg.folders || [];
     if (pins.length) {
@@ -379,8 +400,12 @@ export class HifiLibrary extends LitElement {
     if (startItem) { try { const n = await this._browseMS(startItem.id!); if (!(n.children || []).some((x) => this._audioOnly(x))) startItem = undefined; } catch { startItem = undefined; } }
     if (!startItem && jhTree) startItem = jhTree;
     if (!items.length) items.push({ kind: 'msg', t: this.t('nothing_here') });
+    if (gen !== this._initGen) return;
+    // the user may already have opened a pinned folder or searched while sources were being found: keep that
+    if (this._acted && this._cols.length > 1) { this._cols = [{ ...this._cols[0], items, sel: undefined }, ...this._cols.slice(1)]; this._hereFor = undefined; void this._here(); return; }
     this._cols = [{ title: this.t('sources'), items }];
     this._hereFor = undefined; void this._here();
+    if (this._acted) return;
     // open the start folder
     const start = this.cfg.start;
     if (start) { const it: Item = { src: 'ms', id: start, t: start.split('/').pop() || start, nav: true, play: true, mclass: 'directory' }; await this._push(0, it); }
@@ -391,6 +416,7 @@ export class HifiLibrary extends LitElement {
   private async _openRow(ci: number, ri: number) {
     const col = this._cols[ci], it = col.items[ri];
     if (!it || it.kind) return;
+    this._acted = true;
     col.sel = ri;
     if (!it.nav) { this._cols = this._cols.slice(0, ci + 1); if (it.play) void this._play(it, undefined, col); return; }
     await this._push(ci, it);
@@ -406,16 +432,23 @@ export class HifiLibrary extends LitElement {
   }
   private async _fill(nc: Col, it: Item) {
     if (it.src === 'ms') {
-      const n = await this._browseMS(it.id!);
-      const kids = (n.children || []).filter((x) => this._audioOnly(x));
-      nc.items = kids.map((x) => this._msItem(x));
-      const files = kids.filter((x) => x.can_play && !x.can_expand).length;
-      if (files) { nc.wide = true; nc.playAll = it; }
+      const cached = this._cacheRead(it.id!);
+      const apply = (n: BrowseNode) => {
+        const kids = (n.children || []).filter((x) => this._audioOnly(x));
+        nc.items = kids.map((x) => this._msItem(x));
+        const files = kids.some((x) => x.can_play && !x.can_expand);
+        nc.wide = files; nc.playAll = files ? it : undefined;
+      };
+      apply(cached ? cached.n : await this._browseMS(it.id!));
       // refresh in the background when the cached copy is older than half its life
-      void this._browseMS(it.id!, true).then((f) => {
-        const fresh = (f.children || []).filter((x) => this._audioOnly(x)).map((x) => this._msItem(x));
-        if (fresh.length !== nc.items.length && this._cols.includes(nc)) { nc.items = fresh; this._cols = [...this._cols]; }
-      }).catch(() => {});
+      if (cached && Date.now() - cached.t > (this.cfg.cache_hours ?? 12) * 1800e3) {
+        void this._browseMS(it.id!, true).then((f) => {
+          if (!this._cols.includes(nc)) return;
+          const before = JSON.stringify(nc.items.map((x) => x.id));
+          apply(f);
+          if (JSON.stringify(nc.items.map((x) => x.id)) !== before) { nc.sel = undefined; this._cols = this._cols.slice(0, this._cols.indexOf(nc) + 1); }
+        }).catch(() => {});
+      }
     } else if (it.src === 'pb') {
       const n = await this._browseEntity(it.entity!, it.id, it.ctype);
       // the media sources a player lists at its root are already in the drawer
@@ -477,6 +510,7 @@ export class HifiLibrary extends LitElement {
 
   private async _search(term: string) {
     if (!term) return;
+    this._acted = true;
     const nc: Col = { title: this.t('search_results', { term }), items: [], loading: true, wide: true };
     this._cols = [{ ...this._cols[0], sel: undefined }, nc];
     const lt = term.toLowerCase();
@@ -537,9 +571,11 @@ export class HifiLibrary extends LitElement {
    * Plays an item. `order` is set by the column buttons: 'shuffle' plays the whole list in random order,
    * 'inorder' (Play all) plays it in order; a single row leaves the player's shuffle setting alone.
    */
+  private _playGen = 0;
   private async _play(it: Item, enqueue?: 'next' | 'add', col?: Col, order?: 'shuffle' | 'inorder') {
     const out = this.output, t = this.t;
     if (!out || !this.hass) return;
+    if (!enqueue) this._playGen++;   // stops a folder that is still being queued
     const name = this.outName, mix = order === 'shuffle';
     // speakers that shuffle by themselves: set it before playing a whole list
     const setShuffle = async (on: boolean) => {
@@ -555,6 +591,7 @@ export class HifiLibrary extends LitElement {
         else { const sib = (col?.items || []).filter((x) => x.src === 'ms' && x.play && !x.nav); start = Math.max(0, sib.indexOf(it)); list = sib.length ? sib : [it]; }
         if (enqueue) list = [it];
         if (mix) { list = shuffled(list); start = 0; }
+        if (!list.length) throw new Error(t('nothing_here'));
         const first = await this._resolve(list[start]);
         if (!first) throw new Error(t('browser_cant'));
         if (enqueue) { WebPlayer.append(WebPlayer.gen, first); this._say(t('queued_on', { output: name, title: it.t }), true); return; }
@@ -577,7 +614,8 @@ export class HifiLibrary extends LitElement {
           entity_id: out.entity, media_content_id: f.id, media_content_type: f.ctype || 'music', ...(e && this.caps?.enqueue ? { enqueue: e } : {}),
         });
         await pm(files[0], enqueue || 'replace');
-        if (this.caps?.enqueue && !enqueue) for (const f of files.slice(1)) await pm(f, 'add');
+        const pg = ++this._playGen;
+        if (this.caps?.enqueue && !enqueue) for (const f of files.slice(1)) { if (pg !== this._playGen) break; await pm(f, 'add'); }
       } else {
         await setShuffle(mix);
         await this.hass.callService('media_player', 'play_media', {
@@ -628,7 +666,7 @@ export class HifiLibrary extends LitElement {
   // ── keyboard ──
   private _onKey(e: KeyboardEvent) {
     const row = (e.target as HTMLElement).closest<HTMLElement>('.r');
-    if (!row) return;
+    if (!row || e.target !== row) return;   // keys on the row's own buttons do what the button does
     const ci = +row.dataset.c!, ri = +row.dataset.r!;
     const rows = [...this.renderRoot.querySelectorAll<HTMLElement>(`.r[data-c="${ci}"]`)];
     const i = rows.indexOf(row);
@@ -638,6 +676,10 @@ export class HifiLibrary extends LitElement {
       const it = this._cols[ci].items[ri];
       if (e.key === 'Enter' && !it.nav && it.play) { void this._play(it, undefined, this._cols[ci]); return; }
       void this._openRow(ci, ri).then(() => this.updateComplete).then(() => this.renderRoot.querySelector<HTMLElement>(`.r[data-c="${ci + 1}"]`)?.focus());
+    } else if (e.key === 'ArrowLeft' && ci > 0 && (this.cfg.view === 'list' || this._narrow)) {
+      e.preventDefault();
+      this._cols = this._cols.slice(0, ci);
+      void this.updateComplete.then(() => this.renderRoot.querySelector<HTMLElement>(`.r[data-c="${ci - 1}"][data-r="${this._cols[ci - 1]?.sel ?? 0}"]`)?.focus());
     } else if (e.key === 'ArrowLeft' && ci > 0) {
       e.preventDefault();
       const p = this._cols[ci - 1];
@@ -671,7 +713,7 @@ export class HifiLibrary extends LitElement {
   private _col(c: Col, ci: number, list: boolean) {
     const t = this.t;
     const count = c.items.filter((x) => !x.kind).length;
-    return html`<div class="col ${c.wide || list ? 'wide' : ''}" role="listbox" aria-label=${c.title}>
+    return html`<div class="col ${c.wide || list ? 'wide' : ''}" role="list" aria-label=${c.title}>
       <div class="ch">
         ${list && ci > 0 ? html`<button type="button" class="back" aria-label=${t('back')} @click=${() => { this._cols = this._cols.slice(0, ci); }}>‹</button>` : nothing}
         <span class="ct">${c.title}</span>${ci && count ? html`<span class="cn">${count}${c.paged?.more ? '+' : ''}</span>` : nothing}
@@ -682,7 +724,7 @@ export class HifiLibrary extends LitElement {
         ${c.loading ? html`<div class="msg">${t('loading')}</div>` : c.err ? html`<div class="msg">${t('could_not_load', { error: c.err })}</div>`
           : !c.items.length ? html`<div class="msg">${t('nothing_here')}</div>`
             : c.items.map((it, ri) => it.kind === 'head' ? html`<div class="hd">${it.t.toLocaleUpperCase('el')}</div>` : it.kind === 'msg' ? html`<div class="msg">${it.t}</div>`
-              : html`<div class="r ${it.mclass === 'directory' ? 'dir' : ''} ${c.sel === ri ? 'sel' : ''}" role="option" tabindex="0" aria-selected=${c.sel === ri}
+              : html`<div class="r ${it.mclass === 'directory' ? 'dir' : ''} ${c.sel === ri ? 'sel' : ''}" role="listitem" tabindex="0" aria-current=${c.sel === ri ? 'true' : 'false'}
                   data-c=${ci} data-r=${ri} @click=${() => this._openRow(ci, ri)}>
                 <span class="ri"><ha-icon icon=${it.ic || 'mdi:music'}></ha-icon>${it.img ? html`<img src=${it.img} loading="lazy" alt="" @error=${(e: Event) => (e.target as HTMLElement).remove()}>` : nothing}</span>
                 <span class="rt"><span class="rn">${it.t}</span>${it.s ? html`<span class="rs">${it.s}</span>` : nothing}</span>
@@ -745,11 +787,11 @@ button:focus-visible,.r:focus-visible,input:focus-visible{outline:2px solid #7dd
 .rs{font-size:10px;color:#808080;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rd{font-size:10px;color:#6f6f6f;font-family:ui-monospace,Menlo,Consolas,monospace}
 .rc{color:#555;font-size:14px;width:10px;text-align:center}
-.rp,.rq{flex:none;width:24px;height:24px;border-radius:50%;display:none;align-items:center;justify-content:center;font-size:10px}
+.rp,.rq{flex:none;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;opacity:0}
 .rp{border:1px solid var(--acc);color:var(--acc)}.rq{border:1px solid #444;color:#aaa}
 .rp:hover{background:var(--acc);color:var(--acc-ink,#000)}.rq:hover{color:#fff;border-color:#888}
-.r:hover .rp,.r:hover .rq,.r:focus-within .rp,.r:focus-within .rq,.r.sel .rp,.r.sel .rq{display:flex}
-@media (hover:none){.rp,.rq{display:flex}}
+.r:hover .rp,.r:hover .rq,.r:focus-within .rp,.r:focus-within .rq,.r.sel .rp,.r.sel .rq,.rp:focus-visible,.rq:focus-visible{opacity:1}
+@media (hover:none){.rp,.rq{opacity:1}}
 .msg{padding:14px 12px;font-size:11px;color:#7a7a7a}
 .more{padding:8px 12px;font-size:10px;color:var(--acc)}
 .toast{position:sticky;left:12px;top:10px;z-index:3;align-self:flex-start;margin:10px 0 0 12px;max-width:min(560px,calc(100% - 24px));flex:none;position:absolute;padding:8px 12px;border-radius:8px;background:rgba(40,12,10,.96);border:1px solid rgba(255,90,78,.5);color:#ffb3ac;font-size:12px}

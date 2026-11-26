@@ -20,6 +20,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm run test:unit
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
       - name: Check tag matches package.json
         run: test "v$(node -p "require('./package.json').version")" = "${GITHUB_REF_NAME}"
       - uses: softprops/action-gh-release@v3

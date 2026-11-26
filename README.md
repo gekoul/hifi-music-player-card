@@ -113,6 +113,7 @@ Everything can be set in the visual editor. YAML reference:
 | `reduced_motion` | `auto` | Follows the system setting; `true` freezes meters |
 | `pause_offscreen` | `true` | Stop drawing when the card is off screen |
 | `language` | HA language | `en` or `el` |
+| `key` | from the players | Name for what this card remembers per browser (output, theme, drawer). Set different keys when two cards with the same players should remember separately |
 
 ### Media browser
 

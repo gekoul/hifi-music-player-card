@@ -15,12 +15,14 @@ export const VERSION = typeof __VERSION__ !== 'undefined' ? __VERSION__ : '1.0.0
 
 const FONT_LINK = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Share+Tech+Mono&family=DotGothic16&display=swap';
 
-function ink(hex: string) {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+function ink(hex: unknown) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex ?? '').trim());
   if (!m) return '#000';
   const n = parseInt(m[1], 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
   return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#0b0c0d' : '#ffffff';
 }
+
+function hash(s: string) { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
 
 export class HifiMusicPlayerCard extends LitElement {
   static override styles = cardStyles;
@@ -62,6 +64,8 @@ export class HifiMusicPlayerCard extends LitElement {
   private _pos0 = 0;
   private _posT = 0;
   private _state: string = 'idle';
+  private _helperSeen?: string;
+  private _idle = false;
   private _wpSub = () => { if (this._out()?.browser) this._tick++; };
   private _rm = window.matchMedia?.('(prefers-reduced-motion: reduce)');
 
@@ -72,18 +76,24 @@ export class HifiMusicPlayerCard extends LitElement {
   setConfig(c: CardConfig) {
     if (!c) throw new Error('Invalid configuration');
     if (c.outputs !== undefined && c.outputs !== 'auto' && !Array.isArray(c.outputs)) throw new Error('outputs must be "auto" or a list');
-    if (Array.isArray(c.outputs) && c.outputs.some((o) => !o.browser && !o.entity)) throw new Error('Every output needs an entity (or browser: true)');
-    this._config = { ...c };
-    const key = this._key('theme');
-    const saved = c.remember_theme !== false ? LS.get(key) : null;
-    this._theme = (saved || c.theme || 'streamer') === 'console' ? 'console' : 'streamer';
+    // rows the editor is still filling in (no entity yet) are ignored rather than rejected
+    this._config = { ...c, ...(Array.isArray(c.outputs) ? { outputs: c.outputs.filter((o) => o && (o.browser || o.entity)) } : {}) };
+    // a theme picked on the card wins until the configured theme itself changes
+    const cfgTheme = c.theme === 'console' ? 'console' : 'streamer';
+    const [savedFor, saved] = String((c.remember_theme !== false && LS.get(this._key('theme'))) || '').split('|');
+    this._theme = saved && savedFor === cfgTheme ? (saved === 'console' ? 'console' : 'streamer') : cfgTheme;
     this._light = LS.get(this._key('light'), '1') === '1';
     if (c.fonts !== 'system') this._loadFonts();
   }
   getCardSize() { return this._layout === 'mini' ? 1 : this._layout === 'compact' ? 6 : 9; }
   getGridOptions() { return { columns: 'full', rows: 'auto', min_columns: 6 }; }
 
-  private _key(k: string) { return `hifi_mpc_${k}:${this._config?.output_helper || this._config?.entity || 'card'}`; }
+  /** Per-card storage key: the `key` option, or a hash of what identifies the card (its players). */
+  private _key(k: string) {
+    const c = this._config || ({} as CardConfig);
+    const id = c.key || c.output_helper || c.entity || 'c' + hash(JSON.stringify([c.outputs, c.discovery?.source, c.discovery?.include, c.discovery?.also, c.discovery?.include_areas]));
+    return `hifi_mpc_${k}:${id}`;
+  }
   private _loadFonts() {
     if (document.getElementById('hifi-mpc-fonts')) return;
     const l = document.createElement('link'); l.id = 'hifi-mpc-fonts'; l.rel = 'stylesheet'; l.href = FONT_LINK;
@@ -115,7 +125,11 @@ export class HifiMusicPlayerCard extends LitElement {
     const c = this._config;
     let l: 'wide' | 'compact' | 'mini';
     if (c.layout && c.layout !== 'auto') l = c.layout;
-    else l = w >= 900 ? 'wide' : w >= 480 ? 'compact' : 'mini';
+    else {
+      // a little hysteresis so a scrollbar appearing does not flip the layout back and forth
+      const cur = this._layout, wideAt = cur === 'wide' ? 880 : 900, compactAt = cur === 'mini' ? 490 : 480;
+      l = w >= wideAt ? 'wide' : w >= compactAt ? 'compact' : 'mini';
+    }
     if (l === 'wide' && c.max_height && (w / SW) * SH > c.max_height) l = 'compact';
     this._layout = l;
     this._scale = w / SW;
@@ -138,9 +152,13 @@ export class HifiMusicPlayerCard extends LitElement {
     const c = this._config, outs = this._outputs;
     if (!outs.length) { this._selId = undefined; return; }
     if (c.output_helper) {
+      // follow the helper only when its state actually changes (another card or an automation picked an output)
       const v = this.hass?.states[c.output_helper]?.state;
-      const o = outs.find((x) => x.name === v || x.id === v);
-      if (o) { this._selId = o.id; return; }
+      if (v !== this._helperSeen) {
+        this._helperSeen = v;
+        const o = outs.find((x) => x.name === v || x.id === v);
+        if (o) { this._selId = o.id; return; }
+      }
     }
     if (this._selId && outs.some((o) => o.id === this._selId)) return;
     const saved = c.remember_output !== false ? LS.get(this._key('out')) : null;
@@ -164,6 +182,7 @@ export class HifiMusicPlayerCard extends LitElement {
     this._selId = o.id; this._pend = null;
     if (this._config.remember_output !== false) LS.set(this._key('out'), o.id);
     if (this._config.output_helper) {
+      this._helperSeen = this.hass?.states[this._config.output_helper]?.state;
       const opts: string[] = this.hass?.states[this._config.output_helper]?.attributes.options || [];
       const opt = opts.find((x) => x === o.name) || opts.find((x) => x === o.id);
       if (opt) void this.hass!.callService('input_select', 'select_option', { entity_id: this._config.output_helper, option: opt });
@@ -171,7 +190,7 @@ export class HifiMusicPlayerCard extends LitElement {
   }
   private _setTheme(t: 'streamer' | 'console') {
     this._theme = t;
-    if (this._config.remember_theme !== false) LS.set(this._key('theme'), t);
+    if (this._config.remember_theme !== false) LS.set(this._key('theme'), `${this._config.theme === 'console' ? 'console' : 'streamer'}|${t}`);
   }
   private _pos() {
     let p = this._pos0 || 0;
@@ -291,7 +310,15 @@ export class HifiMusicPlayerCard extends LitElement {
     this.renderRoot.querySelectorAll('[data-k="vv"]').forEach((e) => { e.textContent = step ? this._t('step_only') : v == null ? '—' : String(Math.round(v * 100)); });
   }
 
-  private _accent() { return this._config.accent || (this._theme === 'console' ? AMBER : TEAL); }
+  /** Accent colour as a concrete colour: CSS variables are resolved, anything unusable falls back to the theme colour. */
+  private _accent() {
+    const def = this._theme === 'console' ? AMBER : TEAL;
+    let a = this._config.accent == null ? '' : String(this._config.accent).trim();
+    const v = /^var\(\s*(--[\w-]+)/.exec(a);
+    if (v) a = getComputedStyle(this).getPropertyValue(v[1]).trim();
+    if (/^[0-9a-f]{6}$/i.test(a)) a = '#' + a;
+    return a && CSS.supports('color', a) ? a : def;
+  }
   private _mode(): 'dark' | 'light' {
     const m = this._config.mode || 'dark';
     if (m === 'auto') return this.hass?.themes?.darkMode === false ? 'light' : 'dark';
@@ -346,6 +373,10 @@ export class HifiMusicPlayerCard extends LitElement {
       const tv = real ? real.spec[b] || 0 : fake ? clamp(base + (Math.random() - 0.4) * 0.55, 0, 1) : 0;
       m.spec[b] = tv > m.spec[b] ? m.spec[b] * 0.35 + tv * 0.65 : m.spec[b] * 0.8 + tv * 0.2;
     }
+    // nothing moving: draw the resting state once, then stop redrawing until something plays
+    const still = !real && !fake && m.l < 0.003 && m.r < 0.003 && m.pl < 0.003 && m.pr < 0.003 && Math.abs(m.nl) < 0.003 && Math.abs(m.nr) < 0.003 && m.spec.every((x) => x < 0.003);
+    if (still && this._idle) return;
+    this._idle = still;
     const root = this.renderRoot, acc = this._accent();
     root.querySelectorAll<HTMLCanvasElement>('[data-cv="spc"]').forEach((cv) => {
       const g = cv.getContext('2d'); if (!g) return;
@@ -354,7 +385,7 @@ export class HifiMusicPlayerCard extends LitElement {
       if ((cv as any)._sig !== sig) {
         const gr = g.createLinearGradient(0, H, 0, 0);
         const cols = this._config.spectrum_colors?.length ? this._config.spectrum_colors : pal === 's' ? [acc, acc, '#c8fff3', '#ffffff'] : [acc, '#ffc04d', '#fff0c8', '#ff3b30'];
-        cols.forEach((c2, i) => gr.addColorStop(cols.length > 1 ? i / (cols.length - 1) : 0, c2));
+        cols.forEach((c2, i) => { try { gr.addColorStop(cols.length > 1 ? i / (cols.length - 1) : 0, String(c2)); } catch { gr.addColorStop(cols.length > 1 ? i / (cols.length - 1) : 0, acc); } });
         (cv as any)._grad = gr; (cv as any)._sig = sig;
       }
       g.clearRect(0, 0, W, H);
@@ -442,7 +473,8 @@ export class HifiMusicPlayerCard extends LitElement {
       ${body}
       ${lib && this._layout !== 'mini' ? html`<hifi-library .hass=${this.hass} .cfg=${lib} .output=${vm.out} .caps=${vm.caps} .t=${this._t}
         .theme=${this._theme} .outName=${vm.outName(vm.out || { id: '', name: '—' })} .storeKey=${this._key('lib')}></hifi-library>` : nothing}
-      ${this._dlg ? html`<div class="dlg" @click=${(e: Event) => { if (e.target === e.currentTarget) this._dlg = false; }}>
+      ${this._dlg ? html`<div class="dlg" role="dialog" aria-modal="true" aria-label=${vm.title}
+          @click=${(e: Event) => { if (e.target === e.currentTarget) this._dlg = false; }} @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') this._dlg = false; }}>
         <div class="dlg-in"><button type="button" class="dlg-x" aria-label="Close" @click=${() => { this._dlg = false; }}>✕</button>${compact(vm)}
         ${lib ? html`<hifi-library .hass=${this.hass} .cfg=${{ ...lib, view: 'list' }} .output=${vm.out} .caps=${vm.caps} .t=${this._t} .theme=${this._theme}
           .outName=${vm.outName(vm.out || { id: '', name: '—' })} .storeKey=${this._key('lib')}></hifi-library>` : nothing}</div></div>` : nothing}
@@ -450,7 +482,29 @@ export class HifiMusicPlayerCard extends LitElement {
   }
 
   protected override firstUpdated() { this._bindKnobs(); this._measure(); }
-  protected override updated() {
+  /** Re-render only when something this card shows has changed, not on every state change in the house. */
+  protected override shouldUpdate(ch: PropertyValues) {
+    if (ch.size !== 1 || !ch.has('hass')) return true;
+    const old = ch.get('hass') as HomeAssistant | undefined, h = this.hass;
+    if (!old || !h || old.language !== h.language || old.locale?.language !== h.locale?.language || old.themes?.darkMode !== h.themes?.darkMode) return true;
+    const ids = this._outputs.map((o) => o.entity).filter(Boolean) as string[];
+    if (this._config.output_helper) ids.push(this._config.output_helper);
+    if (ids.some((id) => old.states[id] !== h.states[id])) return true;
+    // a media player appearing or disappearing changes what discovery finds
+    return this._playerSig(h) !== this._playerSig(old);
+  }
+  private _sigCache = new WeakMap<object, string>();
+  private _playerSig(h: HomeAssistant) {
+    let s = this._sigCache.get(h.states);
+    if (s === undefined) {
+      s = Object.keys(h.states).filter((k) => k.startsWith('media_player.')).map((k) => k + (h.states[k].state === 'unavailable' ? '0' : '1')).join(',');
+      this._sigCache.set(h.states, s);
+    }
+    return s;
+  }
+  protected override updated(ch: PropertyValues) {
+    if (ch.has('_dlg') && this._dlg) this.renderRoot.querySelector<HTMLElement>('.dlg-x')?.focus();
+    this._idle = false;   // canvases may be new: draw them once
     this.toggleAttribute('fonts', false);
     if (this._config?.fonts === 'system') this.setAttribute('fonts', 'system');
     this._syncVol(); this._paintKnob();

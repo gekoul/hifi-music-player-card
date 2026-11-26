@@ -62,7 +62,8 @@ export function buildOutputs(hass: HomeAssistant, c: CardConfig): Output[] {
     if (!(sf & F.PLAY_MEDIA)) continue;
     if (!d.show_unavailable && st.state === 'unavailable' && !also.has(eid)) continue;
     const o = mk(hass, eid);
-    if (!also.has(eid)) {
+    // players named in `include` or `also` are taken as they are; the others go through the source rule
+    if (!also.has(eid) && !d.include?.length) {
       if (maOnly ? !o.ma : source === 'all' ? false : !looksLikeSpeaker(hass, eid)) continue;
     }
     if (d.include?.length && !d.include.includes(eid)) continue;

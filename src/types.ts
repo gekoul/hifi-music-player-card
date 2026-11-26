@@ -81,6 +81,8 @@ export interface LibraryConfig {
 
 export interface CardConfig {
   type: string;
+  /** storage key for what this card remembers per browser (output, theme, drawer); set it when two cards would otherwise share */
+  key?: string;
   entity?: string;
   outputs?: 'auto' | OutputConfig[];
   discovery?: DiscoveryConfig;
@@ -94,8 +96,8 @@ export interface CardConfig {
   theme_switch?: boolean;
   remember_theme?: boolean;
   mode?: 'auto' | 'dark' | 'light';
-  accent?: string;
-  spectrum_colors?: string[];
+  accent?: string | number;
+  spectrum_colors?: (string | number)[];
   brand?: string;
   model?: string;
   background?: 'theme' | 'card' | 'transparent';
