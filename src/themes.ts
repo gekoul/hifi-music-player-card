@@ -219,7 +219,9 @@ export function helmWide(vm: VM): TemplateResult {
   const t = vm.t, sh = vm.show, c = vm.caps;
   const pill = (x: number, y: number, w: number, h: number, col: string, side: 'both' | 'left' | 'right' = 'both') =>
     `${pos(x, y, w, h)}background:${col};border-radius:${side === 'both' ? `${h / 2}px` : side === 'left' ? `${h / 2}px 0 0 ${h / 2}px` : `0 ${h / 2}px ${h / 2}px 0`};`;
-  const len = vm.title.length, tsize = len > 30 ? 30 : len > 24 ? 38 : 48;
+  // short titles: one big line; longer ones wrap onto two smaller lines (never cut), and the lines below move down
+  const len = vm.title.length, two = len > 22, tsize = !two ? 48 : len > 60 ? 26 : len > 40 ? 30 : 34;
+  const dy = two ? Math.round(tsize * 2.1) - 52 : 0;
   const keys: [string, string, string, string][] = [];
   if (c.prev) keys.push(['prev', '⏮', t('prev'), HC.la]);
   if (c.seek) keys.push(['rew', '◀◀', `${vm.skip.back} S`, HC.bl]);
@@ -242,24 +244,26 @@ export function helmWide(vm: VM): TemplateResult {
   <div style="${pos(860, 12, 90, 36)}background:${HC.bl}"></div><div style="${pos(956, 12, 90, 36)}background:${HC.la}"></div>
   <div style="${pos(1052, 12, 136, 36)}z-index:4">${vm.themeSwitch && vm.themes.length > 1 ? themeToggle(vm) : html`<div style="${pill(0, 0, 136, 36, HC.or, 'right')}"></div>`}</div>
   <!-- numbered side blocks -->
-  ${blocks.map(([col, lab, val], i) => html`<div class="hm-blk" style="${pos(12, 58 + i * 52, 90, 46)}background:${col}"><small>${lab.toLocaleUpperCase('el')}</small>${i === 1 ? html`<b data-k="vv">—</b>` : val}</div>`)}
+  ${blocks.map(([col, lab, val], i) => {
+    const known = i <= 1 || (val && val !== '—');   // output and volume are always known; format blocks only while it is
+    return html`<div class="hm-blk" style="${pos(12, 58 + i * 52, 90, 46)}background:${col}">${known ? html`<small>${lab.toLocaleUpperCase('el')}</small>${i === 1 ? html`<b data-k="vv">—</b>` : val}` : nothing}</div>`;
+  })}
   <!-- display -->
   <div style="${pos(116, 58, 760, 300)}border:3px solid ${HC.pu};border-radius:28px 0 0 28px;border-right:none;box-sizing:border-box"></div>
   <div style="${pos(876, 58, 8, 300)}background:${HC.pu}"></div>
   <div class="hm-stat" style="${pos(146, 76, 520)}">${statusHTML(vm)}</div>
-  <div class="hm-tt" style="${pos(146, 100, 540)}font-size:${tsize}px">${vm.title.toLocaleUpperCase('el')}</div>
-  <div class="hm-ar" style="${pos(146, 152, 540)}">${[vm.artist, vm.album].filter(Boolean).join(' / ').toLocaleUpperCase('el')}</div>
-  ${sh('quality') && vm.fmtLine ? html`<div class="hm-fmt" style="${pos(146, 182, 540)}">${vm.fmtLine.toLocaleUpperCase('el')}${vm.fmtBadges.map((b, i) => html`<span style="background:${[HC.ye, HC.la, HC.bl][i % 3]}">${b}</span>`)}</div>` : nothing}
+  <div class="hm-tt ${two ? 'two' : ''}" style="${pos(146, 100, 540)}font-size:${tsize}px">${vm.title.toLocaleUpperCase('el')}</div>
+  <div class="hm-ar" style="${pos(146, 152 + dy, 540)}">${[vm.artist, vm.album].filter(Boolean).join(' / ').toLocaleUpperCase('el')}</div>
+  ${sh('quality') && vm.fmtLine ? html`<div class="hm-fmt" style="${pos(146, 182 + dy, 540)}">${vm.fmtLine.toLocaleUpperCase('el')}${vm.fmtBadges.map((b, i) => html`<span style="background:${[HC.ye, HC.la, HC.bl][i % 3]}">${b}</span>`)}</div>` : nothing}
   ${sh('seek') ? html`<div class="hm-clk" data-k="el" style="${pos(690, 92, 176)}">0:00</div>
     <div class="hm-rem" style="${pos(690, 166, 176)}">${t('remaining').toLocaleUpperCase('el')} <span data-k="rm"></span></div>` : nothing}
-  ${sh('spectrum') ? html`<canvas data-cv="spc" data-pal="h" width="1400" height="192" style="${pos(146, 214, 700, 96)}"></canvas>` : nothing}
+  ${sh('spectrum') ? html`<canvas data-cv="spc" data-pal="h" width="1400" height="192" style="${pos(146, 214 + dy, 700, 96 - dy)}"></canvas>` : nothing}
   ${sh('seek') ? html`<div style="${pos(146, 320, 700, 10)}cursor:${c.seek ? 'pointer' : 'default'}" @click=${vm.seek}><div style="${pos(0, 2, 700, 6)}background:#20140a;border-radius:3px">
     <div data-k="pfill" data-w="700" style="${pos(0, 0, 0, 6)}background:var(--acc);border-radius:3px"></div></div></div>` : nothing}
   <!-- right column -->
   ${sh('volume') ? html`<div class="hm-volp" style="${pill(898, 58, 290, 40, HC.or)}">${t('volume').toLocaleUpperCase('el')} <b data-k="vv">—</b></div>
     <div data-vk="h" role="slider" tabindex="0" aria-label=${t('volume')} aria-valuemin="0" aria-valuemax="100" class="hm-vseg" style="${pos(898, 108, 290, 26)}">
-      ${Array.from({ length: segs }, (_, i) => html`<i data-vseg=${i} style="left:${i * (290 / segs)}px;width:${290 / segs - 3}px;background:${i >= segs - 3 ? HC.rd : HC.pe}"
-        @click=${(e: Event) => { e.stopPropagation(); vm.setVol((i + 1) / segs); }}></i>`)}
+      ${Array.from({ length: segs }, (_, i) => html`<i data-vseg=${i} style="left:${i * (290 / segs)}px;width:${290 / segs - 3}px;background:${i >= segs - 3 ? HC.rd : HC.pe}"></i>`)}
     </div>` : nothing}
   ${sh('meters') ? html`<div class="hm-ch" style="${pos(898, 146)}">L</div><div class="hm-ch" style="${pos(898, 164)}">R</div>
     <canvas data-cv="mtr" width="548" height="40" style="${pos(914, 148, 274, 20)}"></canvas>` : nothing}
@@ -283,7 +287,7 @@ export function compact(vm: VM): TemplateResult {
   return html`<div class="cp ${con ? 'con' : helm ? 'helm' : 'str'}">
     <div class="cp-top">
       ${con ? (sh('meters') ? html`<div class="cp-vu ${vm.light ? '' : 'dim'}"><div class="cp-vuw">${vu(0, 0, 130, 100, 'L', t('left'))}</div><div class="cp-vuw">${vu(0, 0, 130, 100, 'R', t('right'))}</div></div>` : nothing)
-        : helm ? html`<div class="cp-hblocks"><span style="background:#ff9c3a">${String(vm.sel + 1).padStart(2, '0')}</span><span style="background:#cc99ff"><b data-k="vv">—</b></span><span style="background:#99ccff">${vm.fmtShort.split(' ')[0] || '—'}</span></div>`
+        : helm ? html`<div class="cp-hblocks"><span style="background:#ff9c3a">${String(vm.sel + 1).padStart(2, '0')}</span><span style="background:#cc99ff"><b data-k="vv">—</b></span><span style="background:#99ccff">${vm.fmtShort.split(' ')[0] || ''}</span></div>`
         : sh('art') ? html`<div class="cp-art">${artBox(vm)}</div>` : nothing}
       <div class="cp-info ${con ? 'cp-vfd' : ''}">
         <div class="cp-status">${statusHTML(vm)}</div>
@@ -303,7 +307,7 @@ export function compact(vm: VM): TemplateResult {
       <div class="cp-right">
         ${sh('outputs') ? outputSelect(vm, con ? 'c' : 's') : nothing}
         ${sh('volume') ? (helm ? html`<div data-vk="h" role="slider" tabindex="0" aria-label=${t('volume')} class="hm-vseg cp-hvseg">
-            ${Array.from({ length: 16 }, (_, i) => html`<i data-vseg=${i} style="left:${i * 10}px;width:7px;background:${i >= 14 ? '#ff5a4a' : '#ffcc99'}" @click=${(e: Event) => { e.stopPropagation(); vm.setVol((i + 1) / 16); }}></i>`)}</div>`
+            ${Array.from({ length: 16 }, (_, i) => html`<i data-vseg=${i} style="left:${i * 10}px;width:7px;background:${i >= 14 ? '#ff5a4a' : '#ffcc99'}"></i>`)}</div>`
           : html`<div class="cp-knob">${knob('k', 44, 44, 64, con ? KNOB_ALU : KNOB_DARK, 12, t('volume'))}</div>`) : nothing}
         ${sh('volume') ? html`<div class="cp-vv"><b data-k="vv">—</b></div>` : nothing}
         ${themeToggle(vm, con ? '#0b0b0c' : 'rgba(128,128,128,.14)')}

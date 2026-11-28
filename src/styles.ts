@@ -24,6 +24,8 @@ button:focus-visible,select:focus-visible,[role=slider]:focus-visible{box-shadow
 .tlist button{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:transparent;color:#e4e6e8;font:600 13px var(--hf);text-align:left}
 .tlist button:hover,.tlist button:focus-visible{background:rgba(255,255,255,.07)}
 .tlist button.on{color:#fff}
+/* in the compact layout the button sits at the bottom of the card: open the menu upwards so it is not clipped */
+.cp .tlist{top:auto;bottom:calc(100% + 6px)}
 .tlist .ck{margin-left:auto;width:8px;height:8px;border-radius:50%;background:var(--acc);box-shadow:0 0 6px var(--acc)}
 .cp-hvseg{position:relative;width:160px;height:26px}.cp-hvseg i{height:26px}
 .sw3{display:flex;border-radius:4px;overflow:hidden;box-shadow:0 0 0 1px rgba(255,255,255,.15)}.sw3 i{width:12px;height:18px}
@@ -38,6 +40,7 @@ button:focus-visible,select:focus-visible,[role=slider]:focus-visible{box-shadow
 .hm-stat{font:500 16px Antonio,'Arial Narrow',sans-serif;letter-spacing:.1em;color:#ff9c3a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hm-stat span{color:inherit!important}
 .hm-tt{font-weight:600;font-family:Antonio,'Arial Narrow',sans-serif;letter-spacing:.03em;color:#ffcc99;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hm-tt.two{white-space:normal;line-height:1.05;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
 .hm-ar{font:500 20px Antonio,'Arial Narrow',sans-serif;letter-spacing:.08em;color:#cc99ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hm-fmt{display:flex;align-items:center;gap:8px;font:500 16px Antonio,'Arial Narrow',sans-serif;letter-spacing:.08em;color:#99ccff;white-space:nowrap;overflow:hidden}
 .hm-fmt span{padding:1px 12px;border-radius:10px;color:#000;font-size:13px}

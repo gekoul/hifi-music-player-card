@@ -262,6 +262,12 @@ export class HifiMusicPlayerCard extends LitElement {
     void this.hass!.callService('media_player', 'volume_set', { entity_id: o.entity, volume_level: v });
   }
   private _stepOnly() { const o = this._out(); const c = this._caps(o); return !c.volSet && c.volStep; }
+  /** Level from a pointer x position on a horizontal segment bar, snapped to its segments. */
+  private _barLevel(bar: HTMLElement, x: number) {
+    const r = bar.getBoundingClientRect(), n = bar.querySelectorAll('[data-vseg]').length || 1;
+    const f = clamp((x - r.left) / r.width, 0, 1);
+    return clamp(Math.ceil(f * n) / n * this._maxVol(), 0, this._maxVol());
+  }
   private _bindKnobs() {
     const root = this.renderRoot as ShadowRoot;
     let y0 = 0, v0 = 0, el: HTMLElement | null = null, acc = 0;
@@ -269,6 +275,8 @@ export class HifiMusicPlayerCard extends LitElement {
       const pe = e as PointerEvent, k = (pe.target as HTMLElement).closest<HTMLElement>('[data-vk]'); if (!k) return;
       pe.preventDefault(); el = k; k.setPointerCapture(pe.pointerId); y0 = pe.clientY; acc = 0;
       if (this._stepOnly()) return;
+      // a horizontal segment bar (Helm): the pointer position sets the level, and dragging along it follows
+      if (k.dataset.vk === 'h') { this._drag = true; this._vol = this._barLevel(k, pe.clientX); this._paintKnob(); return; }
       if (this._vol == null) { el = null; return; }
       this._drag = true; v0 = this._vol; this._paintKnob();
     });
@@ -276,6 +284,7 @@ export class HifiMusicPlayerCard extends LitElement {
       const pe = e as PointerEvent; if (!el) return;
       const sc = this._layout === 'wide' ? this._scale : 1;
       if (this._stepOnly()) { acc += (y0 - pe.clientY); y0 = pe.clientY; while (Math.abs(acc) > 24) { this._keyAction(acc > 0 ? 'volup' : 'voldown'); acc -= Math.sign(acc) * 24; } return; }
+      if (el.dataset.vk === 'h') { this._vol = this._barLevel(el, pe.clientX); this._paintKnob(); return; }
       this._vol = clamp(v0 + (y0 - pe.clientY) / (180 * sc) * this._maxVol(), 0, this._maxVol()); this._paintKnob();
     });
     const end = () => { if (!el) return; el = null; if (!this._drag) return; this._drag = false; this._sendVol(this._vol ?? 0); };

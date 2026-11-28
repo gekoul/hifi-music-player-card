@@ -28,7 +28,8 @@ test('Helm: transport, volume segments and library key work', async ({ page }) =
   await expect(page.locator('hifi-music-player-card')).toContainText('BROTHERS IN ARMS');
   await clearCalls(page);
   await sr(page, `(R) => [...R.querySelectorAll('.hm-key')].find((b) => b.textContent.includes('NEXT')).click()`);
-  await sr(page, `(R) => R.querySelectorAll('[data-vseg]')[11].click()`);
+  // a real mouse click on the 12th of 24 segments (pointer events, not element.click())
+  await page.locator('[data-vseg="11"]').click();
   await expect.poll(() => calls(page)).toEqual([
     ['media_player', 'media_next_track', { entity_id: 'media_player.wiim_pro_6a20' }],
     ['media_player', 'volume_set', { entity_id: 'media_player.wiim_pro_6a20', volume_level: 0.5 }],
@@ -44,3 +45,24 @@ for (const [w, sel] of [[720, '.cp.helm'], [400, '.mn.helm']] as const) {
     await expect.poll(() => sr(page, `(R) => !!R.querySelector('${sel}')`)).toBe(true);
   });
 }
+
+test('Helm: dragging along the volume bar follows the pointer', async ({ page }) => {
+  await load(page, { theme: 'helm', remember_theme: false });
+  await clearCalls(page);
+  const bar = await page.locator('.hm-vseg').boundingBox();
+  await page.mouse.move(bar!.x + 5, bar!.y + bar!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(bar!.x + bar!.width * 0.74, bar!.y + bar!.height / 2, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(() => calls(page)).toEqual([['media_player', 'volume_set', { entity_id: 'media_player.wiim_pro_6a20', volume_level: 0.75 }]]);
+});
+
+test('Helm: long titles wrap onto two lines and side blocks hide unknown values', async ({ page }) => {
+  await load(page, { theme: 'helm', remember_theme: false });
+  await page.evaluate(() => { const w = window as any, id = 'media_player.wiim_pro_6a20', st = w.hass.states[id];
+    w.hass = { ...w.hass, states: { ...w.hass.states, [id]: { ...st, attributes: { ...st.attributes, media_title: 'Dostlar bizim halaya - come to dance with the whole village tonight' } } } }; w.el.hass = w.hass; });
+  await expect.poll(() => sr(page, `(R) => { const t = R.querySelector('.hm-tt'); return t.classList.contains('two') && t.getBoundingClientRect().height > 50; }`)).toBe(true);
+  const blocks = await sr(page, `(R) => [...R.querySelectorAll('.hm-blk')].map((b) => b.textContent.trim())`);
+  expect(blocks[0]).toMatch(/01/);
+  expect(blocks.slice(2)).toEqual(['', '', '']);
+});
