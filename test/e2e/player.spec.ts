@@ -1,10 +1,11 @@
 import { expect, test } from '@playwright/test';
 import { calls, clearCalls, load } from './helpers';
 
-test('renders both themes without errors', async ({ page }) => {
+test('renders the themes without errors', async ({ page }) => {
   const errors = await load(page, { theme: 'streamer', remember_theme: false });
   await expect(page.locator('hifi-music-player-card')).toContainText('Brothers in Arms');
-  await page.evaluate(() => [...(window as any).el.shadowRoot.querySelectorAll('.thb')].find((b: any) => b.textContent.includes('CONSOLE')).click());
+  await page.evaluate(() => (window as any).el.shadowRoot.querySelector('.tbtn').click());
+  await page.evaluate(() => [...(window as any).el.shadowRoot.querySelectorAll('.tlist button')].find((b: any) => b.textContent.includes('VU Console')).click());
   await expect(page.locator('hifi-music-player-card')).toContainText('BROTHERS IN ARMS');
   await expect.poll(() => page.evaluate(() => (window as any).el.shadowRoot.querySelectorAll('[data-ndl]').length)).toBe(2);
   expect(errors).toEqual([]);

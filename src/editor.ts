@@ -11,7 +11,7 @@ const LABELS: Record<string, string> = {
   remember_output: 'Remember the chosen output in this browser', unavailable: 'Unavailable players',
   enabled: 'Show the media browser', sources: 'Sources (empty = all found)', start: 'Start folder (media-source path)', open: 'Drawer on load', height: 'Drawer height (px)',
   view: 'View', audio_only: 'Hide video and image files', cache_hours: 'Cache the folder tree for (hours)',
-  theme: 'Theme', theme_switch: 'Show the theme switch', remember_theme: 'Remember the theme per browser', mode: 'Streamer colour mode', accent: 'Accent colour (hex)',
+  theme: 'Theme', themes: 'Themes offered in the theme menu (none ticked = all)', theme_switch: 'Show the theme menu', remember_theme: 'Remember the theme per browser', mode: 'Streamer colour mode', accent: 'Accent colour (hex)',
   brand: 'Brand text (Console, top left)', model: 'Model text (Console, top right)', background: 'Background', fonts: 'Fonts', placeholder_art: 'Placeholder artwork URL',
   layout: 'Layout', max_height: 'Maximum height (px)', idle_text: 'Text when nothing plays',
   art: 'Artwork', spectrum: 'Spectrum', meters: 'Level meters / VU', seek: 'Seek bar', outputs: 'Output selector', switches: 'Switches (Console)', chips: 'Badges', volume: 'Volume knob', quality: 'Audio format (codec, resolution, bitrate)',
@@ -151,7 +151,8 @@ export class HifiMusicPlayerCardEditor extends LitElement {
   }
   private _look() {
     return this._form(this._config, [
-      { name: 'theme', selector: sel([['streamer', 'Streamer'], ['console', 'VU Console']]) },
+      { name: 'theme', selector: sel([['streamer', 'Streamer'], ['console', 'VU Console'], ['helm', 'Helm']]) },
+      { name: 'themes', selector: { select: { multiple: true, mode: 'list', options: [{ value: 'streamer', label: 'Streamer' }, { value: 'console', label: 'VU Console' }, { value: 'helm', label: 'Helm' }] } } },
       { name: 'theme_switch', selector: { boolean: {} } },
       { name: 'remember_theme', selector: { boolean: {} } },
       { name: 'mode', selector: sel([['dark', 'Dark'], ['light', 'Light'], ['auto', 'Follow Home Assistant']]) },

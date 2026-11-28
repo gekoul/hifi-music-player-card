@@ -1,9 +1,10 @@
 # HiFi Music Player card
 
-A Home Assistant dashboard card that looks and works like premium hi-fi gear. It has two themes: **Streamer** (black glass) and **VU Console** (brushed aluminium with needle meters). It finds your players automatically and has a built-in media browser.
+A Home Assistant dashboard card that looks and works like premium hi-fi gear. It has three themes: **Streamer** (black glass), **VU Console** (brushed aluminium with needle meters) and **Helm** (a retro-futuristic control-panel look with pastel blocks and pill keys). It finds your players automatically and has a built-in media browser.
 
 ![Streamer theme](images/streamer.png)
 ![VU Console theme](images/console.png)
+![Helm theme](images/helm.png)
 
 - Works with **every `media_player`** in Home Assistant, including the players Music Assistant creates. The card finds them by itself, or you choose and name them in the editor.
 - Shows only the controls each player supports: no dead buttons.
@@ -81,8 +82,9 @@ Everything can be set in the visual editor. YAML reference:
 
 | Option | Default | What it does |
 | --- | --- | --- |
-| `theme` | `streamer` | `streamer` or `console` |
-| `theme_switch` | `true` | Show the theme switch on the card |
+| `theme` | `streamer` | `streamer`, `console` or `helm` |
+| `themes` | all | Themes offered in the card's theme menu, e.g. `[streamer, helm]` |
+| `theme_switch` | `true` | Show the theme menu on the card |
 | `remember_theme` | `true` | Remember the theme per browser |
 | `mode` | `dark` | Streamer colours: `dark`, `light`, `auto` (follows Home Assistant) |
 | `accent` | teal / amber | Accent colour, e.g. `"#7dd3fc"` |

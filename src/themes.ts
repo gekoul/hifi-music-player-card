@@ -5,6 +5,13 @@ import type { Output } from './types';
 import { AMBER, BRUSH, GLASS, HERO, KNOB_ALU, KNOB_DARK, MONO, VFD, WELL, WOOD, knob, pos, vu } from './ui';
 
 export type Status = 'playing' | 'paused' | 'idle' | 'unavailable';
+export type ThemeId = 'streamer' | 'console' | 'helm';
+/** Every theme, in menu order, with the colours its menu swatch shows. */
+export const THEMES: { id: ThemeId; swatch: string[] }[] = [
+  { id: 'streamer', swatch: ['#0c0d0f', '#3ee6c4', '#f4f6f8'] },
+  { id: 'console', swatch: ['#6e4024', '#c6cad0', '#ffb347'] },
+  { id: 'helm', swatch: ['#ff9c3a', '#cc99ff', '#99ccff'] },
+];
 
 export interface VM {
   t: Localize;
@@ -30,12 +37,19 @@ export interface VM {
   model: string;
   show: (k: string) => boolean;
   themeSwitch: boolean;
-  theme: 'streamer' | 'console';
+  theme: ThemeId;
+  themes: ThemeId[];
+  menuOpen: boolean;
+  toggleMenu: () => void;
+  toggleLibrary: () => void;
+  hasLibrary: boolean;
+  setVol: (f: number) => void;
+  fmtBadges: string[];
   skip: { back: number; forward: number };
   srcLine: string;
   key: (k: string) => void;
   pick: (i: number) => void;
-  setTheme: (t: 'streamer' | 'console') => void;
+  setTheme: (t: ThemeId) => void;
   seek: (e: MouseEvent) => void;
   nextOutput: () => void;
   outName: (o: Output) => string;
@@ -50,8 +64,20 @@ const statusHTML = (vm: VM) => {
   return html`${lab}&nbsp;&nbsp;·&nbsp;&nbsp;${(vm.out ? vm.outName(vm.out) : '—').toLocaleUpperCase('el')}`;
 };
 
-const themeToggle = (vm: VM, dark: string) => vm.themeSwitch ? html`<div class="tsw" role="group" aria-label=${vm.t('theme')} style="background:${dark}">
-  ${(['streamer', 'console'] as const).map((th) => html`<button type="button" class="thb ${vm.theme === th ? 'on' : ''}" aria-pressed=${vm.theme === th} @click=${() => vm.setTheme(th)}>${vm.t(th).toLocaleUpperCase('el')}</button>`)}
+/** Theme button (current theme name) that opens a menu of all offered themes with colour swatches. */
+const themeToggle = (vm: VM, _dark?: string) => vm.themeSwitch && vm.themes.length > 1 ? html`<div class="tmenu ${vm.theme}">
+  <button type="button" class="tbtn" aria-haspopup="menu" aria-expanded=${vm.menuOpen} aria-label="${vm.t('theme')}: ${vm.t(vm.theme)}"
+    @click=${(e: Event) => { e.stopPropagation(); vm.toggleMenu(); }}>${vm.t(vm.theme).toLocaleUpperCase('el')} ▾</button>
+  ${vm.menuOpen ? html`<div class="tlist" role="menu" @keydown=${(e: KeyboardEvent) => {
+    const items = [...(e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role=menuitemradio]')];
+    const i = items.indexOf(e.target as HTMLElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus(); }
+    if (e.key === 'Escape' || e.key === 'Tab') vm.toggleMenu();
+  }}>
+    ${THEMES.filter((x) => vm.themes.includes(x.id)).map((x) => html`<button type="button" role="menuitemradio" aria-checked=${vm.theme === x.id}
+      class=${vm.theme === x.id ? 'on' : ''} @click=${(e: Event) => { e.stopPropagation(); vm.setTheme(x.id); vm.toggleMenu(); }}>
+      <span class="sw3">${x.swatch.map((c) => html`<i style="background:${c}"></i>`)}</span>${vm.t(x.id)}${vm.theme === x.id ? html`<span class="ck" aria-hidden="true"></span>` : nothing}</button>`)}
+  </div>` : nothing}
 </div>` : nothing;
 
 const outputSelect = (vm: VM, cls: string, style = '') => html`<select class="osel ${cls}" style=${style} aria-label=${vm.t('output')} @change=${(e: Event) => vm.pick(+(e.target as HTMLSelectElement).value)}>
@@ -187,17 +213,81 @@ export function consoleWide(vm: VM): TemplateResult {
   <div style="position:absolute;right:30px;top:20px;z-index:3">${themeToggle(vm, '#0b0b0c')}</div>`;
 }
 
-// ─────────────────────────── compact (both themes) ───────────────────────────
+// ─────────────────────────── Helm, wide ───────────────────────────
+const HC = { or: '#ff9c3a', pe: '#ffcc99', la: '#cc99ff', pu: '#9966cc', bl: '#99ccff', rd: '#ff5a4a', tn: '#d9a066', ye: '#ffdd55' };
+export function helmWide(vm: VM): TemplateResult {
+  const t = vm.t, sh = vm.show, c = vm.caps;
+  const pill = (x: number, y: number, w: number, h: number, col: string, side: 'both' | 'left' | 'right' = 'both') =>
+    `${pos(x, y, w, h)}background:${col};border-radius:${side === 'both' ? `${h / 2}px` : side === 'left' ? `${h / 2}px 0 0 ${h / 2}px` : `0 ${h / 2}px ${h / 2}px 0`};`;
+  const len = vm.title.length, tsize = len > 30 ? 30 : len > 24 ? 38 : 48;
+  const keys: [string, string, string, string][] = [];
+  if (c.prev) keys.push(['prev', '⏮', t('prev'), HC.la]);
+  if (c.seek) keys.push(['rew', '◀◀', `${vm.skip.back} S`, HC.bl]);
+  if (c.play) keys.push(['play', '▶', t('play'), HC.or]);
+  if (c.pause) keys.push(['pause', '❚❚', t('pause'), HC.pe]);
+  if (c.stop) keys.push(['stop', '■', t('stop'), HC.rd]);
+  if (c.seek) keys.push(['ff', '▶▶', `${vm.skip.forward} S`, HC.bl]);
+  if (c.next) keys.push(['next', '⏭', t('next'), HC.la]);
+  const kw = keys.length ? Math.min(106, (776 - (keys.length - 1) * 6) / keys.length) : 0;
+  const on = (k: string) => (k === 'play' && vm.status === 'playing') || (k === 'pause' && vm.status === 'paused') || (k === 'stop' && vm.status === 'idle');
+  const segs = 24;
+  const blocks: [string, string, string][] = [
+    [HC.or, t('output'), String(vm.sel + 1).padStart(2, '0')], [HC.pe, t('volume'), ''], [HC.la, 'KHZ', vm.fmtShort.split(' ')[1]?.split('/')[1] || '—'],
+    [HC.bl, 'BIT', vm.fmtShort.split(' ')[1]?.split('/')[0] || '—'], [HC.tn, 'KBPS', (vm.fmtShort.split(' ')[2] || '').replace('K', '') || '—']];
+  return html`
+  <div class="hm" style="${pos(0, 0, 1200, 460)}background:#000"></div>
+  <!-- top bar -->
+  <div style="${pill(12, 12, 90, 36, HC.or, 'left')}"></div><div style="${pos(108, 12, 260, 36)}background:${HC.pe}"></div><div style="${pos(374, 12, 60, 36)}background:${HC.la}"></div>
+  <div class="hm-title" style="${pos(446, 12, 400, 36)}">${(vm.brand || t('audio_console')).toLocaleUpperCase('el')}</div>
+  <div style="${pos(860, 12, 90, 36)}background:${HC.bl}"></div><div style="${pos(956, 12, 90, 36)}background:${HC.la}"></div>
+  <div style="${pos(1052, 12, 136, 36)}z-index:4">${vm.themeSwitch && vm.themes.length > 1 ? themeToggle(vm) : html`<div style="${pill(0, 0, 136, 36, HC.or, 'right')}"></div>`}</div>
+  <!-- numbered side blocks -->
+  ${blocks.map(([col, lab, val], i) => html`<div class="hm-blk" style="${pos(12, 58 + i * 52, 90, 46)}background:${col}"><small>${lab.toLocaleUpperCase('el')}</small>${i === 1 ? html`<b data-k="vv">—</b>` : val}</div>`)}
+  <!-- display -->
+  <div style="${pos(116, 58, 760, 300)}border:3px solid ${HC.pu};border-radius:28px 0 0 28px;border-right:none;box-sizing:border-box"></div>
+  <div style="${pos(876, 58, 8, 300)}background:${HC.pu}"></div>
+  <div class="hm-stat" style="${pos(146, 76, 520)}">${statusHTML(vm)}</div>
+  <div class="hm-tt" style="${pos(146, 100, 540)}font-size:${tsize}px">${vm.title.toLocaleUpperCase('el')}</div>
+  <div class="hm-ar" style="${pos(146, 152, 540)}">${[vm.artist, vm.album].filter(Boolean).join(' / ').toLocaleUpperCase('el')}</div>
+  ${sh('quality') && vm.fmtLine ? html`<div class="hm-fmt" style="${pos(146, 182, 540)}">${vm.fmtLine.toLocaleUpperCase('el')}${vm.fmtBadges.map((b, i) => html`<span style="background:${[HC.ye, HC.la, HC.bl][i % 3]}">${b}</span>`)}</div>` : nothing}
+  ${sh('seek') ? html`<div class="hm-clk" data-k="el" style="${pos(690, 92, 176)}">0:00</div>
+    <div class="hm-rem" style="${pos(690, 166, 176)}">${t('remaining').toLocaleUpperCase('el')} <span data-k="rm"></span></div>` : nothing}
+  ${sh('spectrum') ? html`<canvas data-cv="spc" data-pal="h" width="1400" height="192" style="${pos(146, 214, 700, 96)}"></canvas>` : nothing}
+  ${sh('seek') ? html`<div style="${pos(146, 320, 700, 10)}cursor:${c.seek ? 'pointer' : 'default'}" @click=${vm.seek}><div style="${pos(0, 2, 700, 6)}background:#20140a;border-radius:3px">
+    <div data-k="pfill" data-w="700" style="${pos(0, 0, 0, 6)}background:var(--acc);border-radius:3px"></div></div></div>` : nothing}
+  <!-- right column -->
+  ${sh('volume') ? html`<div class="hm-volp" style="${pill(898, 58, 290, 40, HC.or)}">${t('volume').toLocaleUpperCase('el')} <b data-k="vv">—</b></div>
+    <div data-vk="h" role="slider" tabindex="0" aria-label=${t('volume')} aria-valuemin="0" aria-valuemax="100" class="hm-vseg" style="${pos(898, 108, 290, 26)}">
+      ${Array.from({ length: segs }, (_, i) => html`<i data-vseg=${i} style="left:${i * (290 / segs)}px;width:${290 / segs - 3}px;background:${i >= segs - 3 ? HC.rd : HC.pe}"
+        @click=${(e: Event) => { e.stopPropagation(); vm.setVol((i + 1) / segs); }}></i>`)}
+    </div>` : nothing}
+  ${sh('meters') ? html`<div class="hm-ch" style="${pos(898, 146)}">L</div><div class="hm-ch" style="${pos(898, 164)}">R</div>
+    <canvas data-cv="mtr" width="548" height="40" style="${pos(914, 148, 274, 20)}"></canvas>` : nothing}
+  ${sh('switches') ? html`${c.shuffle ? html`<div class="hm-lab" style="${pos(898, 192)}">${t('shuffle').toLocaleUpperCase('el')}</div>
+      <button type="button" class="hm-pill ${vm.shuffle ? 'on' : ''}" aria-pressed=${vm.shuffle} style="${pos(990, 190, 56, 22)}" @click=${() => vm.key('shuffle')}>${vm.shuffle ? 'ON' : 'OFF'}</button>` : nothing}
+    ${c.repeat ? html`<div class="hm-lab" style="${pos(1062, 192)}">${t('repeat').toLocaleUpperCase('el')}</div>
+      <button type="button" class="hm-pill ${vm.repeat !== 'off' ? 'on' : ''}" style="${pos(1132, 190, 56, 22)}" @click=${() => vm.key('repeat')}>${vm.repeat.toLocaleUpperCase('el')}</button>` : nothing}` : nothing}
+  ${sh('outputs') ? html`<div class="hm-lab or" style="${pos(898, 226)}">${t('play_on').toLocaleUpperCase('el')}</div>
+    <div class="hm-outs" style="${pos(898, 250, 290, 108)}">${vm.outputs.map((o, i) => html`<button type="button" class="hm-out ${i === vm.sel ? 'on' : ''} ${o.na ? 'na' : ''}" @click=${() => vm.pick(i)}>${i === vm.sel ? '● ' : ''}${vm.outName(o).toLocaleUpperCase('el')}</button>`)}</div>` : nothing}
+  <!-- bottom bar: transport -->
+  <div style="${pill(12, 372, 90, 76, HC.la, 'left')}"></div>
+  ${keys.map(([k, ic, l, col], i) => html`<button type="button" class="hm-key ${on(k) ? 'on' : ''}" aria-label=${l} style="${pos(108 + i * (kw + 6), 372, kw, 76)}background:${col}" @click=${() => vm.key(k)}><span>${ic}</span><span>${l.toLocaleUpperCase('el')}</span></button>`)}
+  ${vm.hasLibrary ? html`<button type="button" class="hm-lib" style="${pill(898, 372, 290, 76, HC.pu, 'right')}" @click=${vm.toggleLibrary}>${t('library').toLocaleUpperCase('el')} ▾</button>`
+    : html`<div style="${pill(898, 372, 290, 76, HC.pu, 'right')}"></div>`}`;
+}
+
+// ─────────────────────────── compact (all themes) ───────────────────────────
 export function compact(vm: VM): TemplateResult {
-  const t = vm.t, sh = vm.show, con = vm.theme === 'console';
+  const t = vm.t, sh = vm.show, con = vm.theme === 'console', helm = vm.theme === 'helm';
   const btns = transport(vm);
-  return html`<div class="cp ${con ? 'con' : 'str'}">
+  return html`<div class="cp ${con ? 'con' : helm ? 'helm' : 'str'}">
     <div class="cp-top">
       ${con ? (sh('meters') ? html`<div class="cp-vu ${vm.light ? '' : 'dim'}"><div class="cp-vuw">${vu(0, 0, 130, 100, 'L', t('left'))}</div><div class="cp-vuw">${vu(0, 0, 130, 100, 'R', t('right'))}</div></div>` : nothing)
+        : helm ? html`<div class="cp-hblocks"><span style="background:#ff9c3a">${String(vm.sel + 1).padStart(2, '0')}</span><span style="background:#cc99ff"><b data-k="vv">—</b></span><span style="background:#99ccff">${vm.fmtShort.split(' ')[0] || '—'}</span></div>`
         : sh('art') ? html`<div class="cp-art">${artBox(vm)}</div>` : nothing}
       <div class="cp-info ${con ? 'cp-vfd' : ''}">
         <div class="cp-status">${statusHTML(vm)}</div>
-        <div class="cp-title">${con ? vm.title.toLocaleUpperCase('el') : vm.title}</div>
+        <div class="cp-title">${con || helm ? vm.title.toLocaleUpperCase('el') : vm.title}</div>
         <div class="cp-artist">${con ? vm.artist.toLocaleUpperCase('el') : vm.artist}</div>
         ${vm.fmtLine ? html`<div class="cp-fmt">${con ? vm.fmtShort : vm.fmtLine}</div>` : nothing}
         ${sh('chips') && !con ? html`<div class="cp-chips">${vm.chips.map(([c, k]) => html`<span class="chip ${k}">${c}</span>`)}</div>` : nothing}
@@ -205,14 +295,17 @@ export function compact(vm: VM): TemplateResult {
           <div class="cp-times"><span data-k="el">0:00</span><span data-k="rm"></span></div>` : nothing}
       </div>
     </div>
-    ${sh('spectrum') ? html`<div class="cp-spc"><canvas data-cv="spc" data-pal=${con ? 'c' : 's'} width="1200" height="80"></canvas></div>` : nothing}
+    ${sh('spectrum') ? html`<div class="cp-spc"><canvas data-cv="spc" data-pal=${con ? 'c' : helm ? 'h' : 's'} width="1200" height="80"></canvas></div>` : nothing}
     <div class="cp-bot">
       <div class="cp-tr">${btns.map((b) => html`<button type="button" class="tb ${b.size === 62 ? 'big' : ''} ${(b.k === 'shuffle' && vm.shuffle) || (b.k === 'repeat' && vm.repeat !== 'off') ? 'act' : ''}" aria-label=${b.label} @click=${() => vm.key(b.k)}>${b.ic}</button>`)}
         ${vm.caps.stop ? html`<button type="button" class="tb" aria-label=${t('stop')} @click=${() => vm.key('stop')}>■</button>` : nothing}
         ${vm.caps.mute ? html`<button type="button" class="tb ${vm.muted ? 'act' : ''}" aria-label=${t('mute')} @click=${() => vm.key('mute')}>${vm.muted ? '🔇' : '🔈'}</button>` : nothing}</div>
       <div class="cp-right">
         ${sh('outputs') ? outputSelect(vm, con ? 'c' : 's') : nothing}
-        ${sh('volume') ? html`<div class="cp-knob">${knob('k', 44, 44, 64, con ? KNOB_ALU : KNOB_DARK, 12, t('volume'))}</div><div class="cp-vv"><b data-k="vv">—</b></div>` : nothing}
+        ${sh('volume') ? (helm ? html`<div data-vk="h" role="slider" tabindex="0" aria-label=${t('volume')} class="hm-vseg cp-hvseg">
+            ${Array.from({ length: 16 }, (_, i) => html`<i data-vseg=${i} style="left:${i * 10}px;width:7px;background:${i >= 14 ? '#ff5a4a' : '#ffcc99'}" @click=${(e: Event) => { e.stopPropagation(); vm.setVol((i + 1) / 16); }}></i>`)}</div>`
+          : html`<div class="cp-knob">${knob('k', 44, 44, 64, con ? KNOB_ALU : KNOB_DARK, 12, t('volume'))}</div>`) : nothing}
+        ${sh('volume') ? html`<div class="cp-vv"><b data-k="vv">—</b></div>` : nothing}
         ${themeToggle(vm, con ? '#0b0b0c' : 'rgba(128,128,128,.14)')}
       </div>
     </div>
@@ -221,10 +314,10 @@ export function compact(vm: VM): TemplateResult {
 
 // ─────────────────────────── mini (one row) ───────────────────────────
 export function mini(vm: VM, open: () => void): TemplateResult {
-  const t = vm.t, con = vm.theme === 'console';
-  return html`<div class="mn ${con ? 'con' : 'str'}">
+  const t = vm.t, con = vm.theme === 'console', helm = vm.theme === 'helm';
+  return html`<div class="mn ${con ? 'con' : helm ? 'helm' : 'str'}">
     <button type="button" class="mn-open" aria-label=${vm.title} @click=${open}>
-      ${con ? html`<div class="mn-vu ${vm.light ? '' : 'dim'}">${vu(0, 0, 72, 52, 'L', t('left'))}</div>` : html`<div class="mn-art">${artBox(vm)}</div>`}
+      ${con ? html`<div class="mn-vu ${vm.light ? '' : 'dim'}">${vu(0, 0, 72, 52, 'L', t('left'))}</div>` : helm ? html`<span class="mn-cap"></span>` : html`<div class="mn-art">${artBox(vm)}</div>`}
       <span class="mn-txt"><span class="mn-title">${vm.title}</span><span class="mn-artist">${vm.artist || (vm.out ? vm.outName(vm.out) : '')}</span></span>
     </button>
     ${vm.caps.play || vm.caps.pause ? html`<button type="button" class="tb big" aria-label=${vm.status === 'playing' ? t('pause') : t('play')} @click=${() => vm.key('toggle')}>${vm.status === 'playing' ? '❚❚' : '▶'}</button>` : nothing}

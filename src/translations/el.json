@@ -63,5 +63,8 @@
   "on_this_player": "Σε αυτή τη συσκευή",
   "shuffle_play": "Τυχαία αναπαραγωγή",
   "shuffling_on": "Τυχαία σε {output}: {title}",
-  "no_shuffle": "Το {output} δεν κάνει τυχαία σειρά· παίζει με τη σειρά"
+  "no_shuffle": "Το {output} δεν κάνει τυχαία σειρά· παίζει με τη σειρά",
+  "helm": "Helm",
+  "audio_console": "Κονσόλα ήχου",
+  "remaining": "Απομένει"
 }

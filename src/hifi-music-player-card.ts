@@ -3,7 +3,7 @@ import { buildOutputs } from './discovery';
 import { BROWSER_CAPS, caps, type Caps } from './features';
 import { localizer, type Localize } from './localize';
 import { cardStyles } from './styles';
-import { compact, consoleWide, mini, streamerWide, type Status, type VM } from './themes';
+import { THEMES, compact, consoleWide, helmWide, mini, streamerWide, type Status, type ThemeId, type VM } from './themes';
 import type { CardConfig, HomeAssistant, LibraryConfig, Output, PlayerView } from './types';
 import { LS, SH, SW, TEAL, AMBER, clamp, fmt } from './ui';
 import { WebPlayer } from './web-player';
@@ -14,7 +14,7 @@ import './editor';
 declare const __VERSION__: string;
 export const VERSION = typeof __VERSION__ !== 'undefined' ? __VERSION__ : '1.0.0';
 
-const FONT_LINK = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Share+Tech+Mono&family=DotGothic16&display=swap';
+const FONT_LINK = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Share+Tech+Mono&family=DotGothic16&family=Antonio:wght@400;500;600;700&display=swap';
 
 function ink(hex: unknown) {
   const m = /^#?([0-9a-f]{6})$/i.exec(String(hex ?? '').trim());
@@ -34,16 +34,19 @@ export class HifiMusicPlayerCard extends LitElement {
     _layout: { state: true },
     _selId: { state: true },
     _dlg: { state: true },
+    _menu: { state: true },
     _light: { state: true },
     _tick: { state: true },
   };
 
   hass?: HomeAssistant;
   private _config!: CardConfig;
-  private _theme: 'streamer' | 'console' = 'streamer';
+  private _theme: ThemeId = 'streamer';
   private _layout: 'wide' | 'compact' | 'mini' = 'wide';
   private _selId?: string;
   private _dlg = false;
+  private _menu = false;
+  private _closeMenu = (e: Event) => { if (this._menu && !e.composedPath().some((n) => (n as HTMLElement).classList?.contains('tmenu'))) this._menu = false; };
   private _light = true;
   private _tick = 0;
 
@@ -80,11 +83,20 @@ export class HifiMusicPlayerCard extends LitElement {
     // rows the editor is still filling in (no entity yet) are ignored rather than rejected
     this._config = { ...c, ...(Array.isArray(c.outputs) ? { outputs: c.outputs.filter((o) => o && (o.browser || o.entity)) } : {}) };
     // a theme picked on the card wins until the configured theme itself changes
-    const cfgTheme = c.theme === 'console' ? 'console' : 'streamer';
+    const cfgTheme = this._cfgTheme();
     const [savedFor, saved] = String((c.remember_theme !== false && LS.get(this._key('theme'))) || '').split('|');
-    this._theme = saved && savedFor === cfgTheme ? (saved === 'console' ? 'console' : 'streamer') : cfgTheme;
+    this._theme = saved && savedFor === cfgTheme && this._themes().includes(saved as ThemeId) ? saved as ThemeId : cfgTheme;
     this._light = LS.get(this._key('light'), '1') === '1';
     if (c.fonts !== 'system') this._loadFonts();
+  }
+  /** Themes offered in the menu: `themes` from the config, else all. */
+  private _themes(): ThemeId[] {
+    const all = THEMES.map((x) => x.id), want = (this._config?.themes || []).filter((x) => all.includes(x as ThemeId)) as ThemeId[];
+    return want.length ? want : all;
+  }
+  private _cfgTheme(): ThemeId {
+    const t = this._config?.theme as ThemeId, list = this._themes();
+    return list.includes(t) ? t : list[0];
   }
   getCardSize() { return this._layout === 'mini' ? 1 : this._layout === 'compact' ? 6 : 9; }
   getGridOptions() { return { columns: 'full', rows: 'auto', min_columns: 6 }; }
@@ -104,6 +116,7 @@ export class HifiMusicPlayerCard extends LitElement {
   // ── lifecycle ──
   override connectedCallback() {
     super.connectedCallback();
+    document.addEventListener('click', this._closeMenu, true);
     WebPlayer.subs.add(this._wpSub);
     this._ro = new ResizeObserver(() => this._measure());
     this._ro.observe(this);
@@ -115,6 +128,7 @@ export class HifiMusicPlayerCard extends LitElement {
   }
   override disconnectedCallback() {
     super.disconnectedCallback();
+    document.removeEventListener('click', this._closeMenu, true);
     WebPlayer.subs.delete(this._wpSub);
     this._ro?.disconnect(); this._io?.disconnect();
     cancelAnimationFrame(this._raf); this._raf = 0;
@@ -189,9 +203,9 @@ export class HifiMusicPlayerCard extends LitElement {
       if (opt) void this.hass!.callService('input_select', 'select_option', { entity_id: this._config.output_helper, option: opt });
     }
   }
-  private _setTheme(t: 'streamer' | 'console') {
+  private _setTheme(t: ThemeId) {
     this._theme = t;
-    if (this._config.remember_theme !== false) LS.set(this._key('theme'), `${this._config.theme === 'console' ? 'console' : 'streamer'}|${t}`);
+    if (this._config.remember_theme !== false) LS.set(this._key('theme'), `${this._cfgTheme()}|${t}`);
   }
   private _pos() {
     let p = this._pos0 || 0;
@@ -308,12 +322,16 @@ export class HifiMusicPlayerCard extends LitElement {
         c.style.filter = on && !pend ? `drop-shadow(0 0 3px ${acc})` : '';
       });
     });
+    this.renderRoot.querySelectorAll<HTMLElement>('[data-vseg]').forEach((e) => {
+      const n = e.parentElement?.querySelectorAll('[data-vseg]').length || 1;
+      e.style.opacity = v != null && +e.dataset.vseg! / n < f - 1e-6 ? (pend ? '.55' : '1') : '.16';
+    });
     this.renderRoot.querySelectorAll('[data-k="vv"]').forEach((e) => { e.textContent = step ? this._t('step_only') : v == null ? '—' : String(Math.round(v * 100)); });
   }
 
   /** Accent colour as a concrete colour: CSS variables are resolved, anything unusable falls back to the theme colour. */
   private _accent() {
-    const def = this._theme === 'console' ? AMBER : TEAL;
+    const def = this._theme === 'console' ? AMBER : this._theme === 'helm' ? '#ff9c3a' : TEAL;
     let a = this._config.accent == null ? '' : String(this._config.accent).trim();
     const v = /^var\(\s*(--[\w-]+)/.exec(a);
     if (v) a = getComputedStyle(this).getPropertyValue(v[1]).trim();
@@ -358,7 +376,7 @@ export class HifiMusicPlayerCard extends LitElement {
   }
   private _meters() {
     const m = this._m, playing = this._state === 'playing', mode = this._motion();
-    const B = this._layout === 'wide' ? (this._theme === 'console' ? 180 : 120) : 72;
+    const B = this._layout === 'wide' ? (this._theme === 'console' ? 180 : this._theme === 'helm' ? 80 : 120) : 72;
     const real = mode !== 'off' && this._out()?.browser ? WebPlayer.levels(B) : null;
     const fake = mode === 'animated' && playing && !real;
     const tgt = () => (fake ? 0.55 + Math.random() * 0.4 : 0);
@@ -385,7 +403,7 @@ export class HifiMusicPlayerCard extends LitElement {
       const sig = `${acc}|${(this._config.spectrum_colors || []).join(',')}|${H}`;
       if ((cv as any)._sig !== sig) {
         const gr = g.createLinearGradient(0, H, 0, 0);
-        const cols = this._config.spectrum_colors?.length ? this._config.spectrum_colors : pal === 's' ? [acc, acc, '#c8fff3', '#ffffff'] : [acc, '#ffc04d', '#fff0c8', '#ff3b30'];
+        const cols = this._config.spectrum_colors?.length ? this._config.spectrum_colors : pal === 's' ? [acc, acc, '#c8fff3', '#ffffff'] : pal === 'h' ? ['#99ccff', '#cc99ff', '#ffcc99', acc] : [acc, '#ffc04d', '#fff0c8', '#ff3b30'];
         cols.forEach((c2, i) => { try { gr.addColorStop(cols.length > 1 ? i / (cols.length - 1) : 0, String(c2)); } catch { gr.addColorStop(cols.length > 1 ? i / (cols.length - 1) : 0, acc); } });
         (cv as any)._grad = gr; (cv as any)._sig = sig;
       }
@@ -440,7 +458,10 @@ export class HifiMusicPlayerCard extends LitElement {
       status, title: String(title), artist: String(a.media_artist || ''), album: String(a.media_album_name || ''),
       art: pic && this.hass?.hassUrl && pic.startsWith('/') ? this.hass.hassUrl(pic) : pic,
       placeholder: this._config.placeholder_art,
-      fmtLine: formatLine(q), fmtShort: formatShort(q),
+      fmtLine: formatLine(q), fmtShort: formatShort(q), fmtBadges: formatBadges(q),
+      themes: this._themes(), menuOpen: this._menu, toggleMenu: () => { this._menu = !this._menu; },
+      toggleLibrary: () => { (this.renderRoot.querySelector('hifi-library') as any)?.toggle(); }, hasLibrary: !!this._libCfg(),
+      setVol: (f) => this._sendVol(f * this._maxVol()),
       chips, short: live ? t('live').toLocaleUpperCase('el') : o?.browser ? 'BROWSER' : (an.length > 9 ? an.split(/\s+/).map((w) => w[0]).join('') : an).toLocaleUpperCase('el'),
       caps: this._caps(o), shuffle: !!a.shuffle, repeat: String(a.repeat || 'off'), muted: !!a.is_volume_muted,
       light: this._light, brand: this._config.brand || '', model: this._config.model || '',
@@ -472,7 +493,7 @@ export class HifiMusicPlayerCard extends LitElement {
     let body: TemplateResult;
     if (this._layout === 'wide') {
       body = html`<div class="wrap" style="height:${SH * this._scale}px"><div class="st ${this._theme}" style="transform:scale(${this._scale})">
-        ${this._theme === 'console' ? consoleWide(vm) : streamerWide(vm)}</div></div>`;
+        ${this._theme === 'console' ? consoleWide(vm) : this._theme === 'helm' ? helmWide(vm) : streamerWide(vm)}</div></div>`;
     } else if (this._layout === 'compact') body = compact(vm);
     else body = mini(vm, () => { this._dlg = true; });
     return html`<ha-card class=${cls} style=${style}>

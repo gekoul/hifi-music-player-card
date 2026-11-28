@@ -92,7 +92,9 @@ export interface CardConfig {
   unavailable?: 'dim' | 'hide';
   browser_player?: boolean;
 
-  theme?: 'streamer' | 'console';
+  theme?: 'streamer' | 'console' | 'helm';
+  /** themes offered in the theme menu (default: all) */
+  themes?: ('streamer' | 'console' | 'helm')[];
   theme_switch?: boolean;
   remember_theme?: boolean;
   mode?: 'auto' | 'dark' | 'light';

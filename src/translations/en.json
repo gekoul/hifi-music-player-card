@@ -63,5 +63,8 @@
   "on_this_player": "On this player",
   "shuffle_play": "Shuffle play",
   "shuffling_on": "Shuffling on {output}: {title}",
-  "no_shuffle": "{output} can't shuffle; playing in order"
+  "no_shuffle": "{output} can't shuffle; playing in order",
+  "helm": "Helm",
+  "audio_console": "Audio console",
+  "remaining": "Remaining"
 }

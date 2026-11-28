@@ -160,6 +160,8 @@ export class HifiLibrary extends LitElement {
     if (ch.has('output') && this._inited && this._cols.length) void this._here();
   }
   private _openSet = false;
+  /** Opens or closes the drawer (also used by the Helm theme's LIBRARY key). */
+  toggle() { this._toggle(); }
   private _toggle() {
     this._open = !this._open;
     LS.set(this.storeKey + ':open', this._open ? '1' : '0');
@@ -786,6 +788,15 @@ export class HifiLibrary extends LitElement {
 :host{display:block;font-family:var(--hf,Inter,Roboto,system-ui,sans-serif)}
 .lib{margin-top:8px;border-radius:16px;overflow:hidden;color:#d6d6d6}
 .lib.streamer{background:linear-gradient(180deg,#141618,#0c0d0f);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 0 0 1px rgba(0,0,0,.6)}
+.lib.helm{background:#000;border-left:14px solid #9966cc;border-radius:22px 0 0 22px;font-family:Antonio,'Arial Narrow',sans-serif}
+.lib.helm .tog{background:#ff9c3a;color:#000;border-radius:14px;box-shadow:none;letter-spacing:.1em;font-size:12px}
+.lib.helm .chev{color:#000}
+.lib.helm .col{background:#000}.lib.helm .col:first-child{background:#0a0610}
+.lib.helm .ct,.lib.helm .hd{color:#cc99ff;letter-spacing:.14em}
+.lib.helm .rn{color:#ffcc99;font-size:14px;letter-spacing:.04em}
+.lib.helm .r.sel{background:linear-gradient(90deg,rgba(255,156,58,.25),transparent);border-left-color:#ff9c3a}
+.lib.helm .pa{border-color:#ff9c3a;color:#ff9c3a}
+.lib.helm .acts{background:linear-gradient(90deg,transparent,#000 16px)}.lib.helm .rp,.lib.helm .rq{background:#000}
 .lib.console{background:linear-gradient(180deg,#2a2c30,#18191c);box-shadow:inset 0 1px 0 rgba(255,250,240,.16),0 0 0 1px #000;border-left:14px solid #5a331b;border-right:14px solid #5a331b}
 .bar{display:flex;align-items:center;gap:12px;padding:8px 14px;flex-wrap:wrap}
 button{font-family:inherit;border:none;background:none;color:inherit;cursor:pointer;padding:0}
