@@ -54,6 +54,7 @@ const hass = {
       return { title: 'x', children: [] };
     }
     if (m.type === 'config_entries/get') return [{ entry_id: 'MAENTRY', state: 'loaded' }];
+    if (m.type === 'call_service' && m.service === 'get_library' && m.service_data.media_type === 'radio') return { response: { items: [{ name: 'Rock FM 96.9', media_type: 'radio', uri: 'library://radio/7', image: 'https://img.example/rockfm969logo.png' }] } };
     if (m.type === 'call_service' && m.service === 'get_library') return { response: { items: [{ name: 'Love over Gold', media_type: 'album', uri: 'library://album/1', artists: [{ name: 'Dire Straits' }] }] } };
     if (m.type === 'call_service' && m.domain === 'jellyha' && m.service === 'search') {
       const d = m.service_data;

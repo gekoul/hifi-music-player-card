@@ -66,5 +66,9 @@
   "no_shuffle": "{output} can't shuffle; playing in order",
   "helm": "Helm",
   "audio_console": "Audio console",
-  "remaining": "Remaining"
+  "remaining": "Remaining",
+  "tuning": "Tuning in {title}…",
+  "radio_not_found": "no stream for this station that a browser can play",
+  "live_radio": "Live radio",
+  "stream_failed": "the stream did not start in this browser (station offline, or it only streams over plain http, which browsers block on a secure page)"
 }

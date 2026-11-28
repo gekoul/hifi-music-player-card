@@ -14,6 +14,9 @@ export interface Track {
   art?: string;
   dur?: number;
   cross?: boolean;
+  /** other addresses for the same stream, tried in turn when one fails */
+  alt?: string[];
+  live?: boolean;
 }
 
 export interface Levels { l: number; r: number; spec: number[] }
@@ -32,6 +35,8 @@ class WebPlayerImpl {
   private noGraph = false;
   private zero = 0;
   private stopped = false;
+  /** the current track failed on every address */
+  failed = false;
   queue: Track[] = [];
   idx = -1;
   gen = 0;
@@ -51,7 +56,17 @@ class WebPlayerImpl {
     const v = lsGet(VOL_KEY);
     if (v !== null) a.volume = Math.min(1, Math.max(0, +v));
     a.addEventListener('ended', () => { if (a === this.active) this.next(true); });
-    ['play', 'pause', 'loadedmetadata', 'volumechange', 'emptied', 'seeked', 'error'].forEach((ev) => a.addEventListener(ev, () => { if (a === this.active) this.emit(); }));
+    ['play', 'pause', 'loadedmetadata', 'volumechange', 'emptied', 'seeked', 'playing'].forEach((ev) => a.addEventListener(ev, () => { if (a === this.active) this.emit(); }));
+    a.addEventListener('error', () => {
+      if (a !== this.active || !a.getAttribute('src')) return;
+      const c = this.cur();
+      // another address for the same stream: try it (plain element, as it is usually another server)
+      if (c?.alt?.length) { c.url = c.alt.shift()!; c.cross = true; this.idx--; this.next(); return; }
+      // a file that can't play: go on with the rest of the list
+      if (!c?.live && this.idx + 1 < this.queue.length) { this.next(); return; }
+      this.failed = true;
+      this.emit();
+    });
     return a;
   }
   private el() { if (!this.audio) this.audio = this.mk(); return this.audio; }
@@ -75,7 +90,7 @@ class WebPlayerImpl {
   }
 
   load(list: Track[], start = 0) {
-    this.queue = list.filter((t) => t && t.url).map((t) => ({ ...t, cross: t.cross ?? isCross(t.url) }));
+    this.queue = list.filter((t) => t && t.url).map((t) => ({ ...t, alt: t.alt && [...t.alt], cross: t.cross ?? isCross(t.url) }));
     this.idx = Math.max(0, start) - 1;
     this.gen++;
     this.next();
@@ -92,11 +107,24 @@ class WebPlayerImpl {
     const t = this.queue[this.idx];
     const a = t.cross || this.noGraph ? this.elX() : this.el();
     if (this.active && this.active !== a) this.active.pause();
-    this.active = a; this.stopped = false; this.zero = 0;
+    this.active = a; this.stopped = false; this.zero = 0; this.failed = false;
     if (a === this.audio) this.graph();
     a.src = t.url;
     a.play().catch(() => this.emit());
     this.emit();
+  }
+  /** Resolves when the current track starts (true) or fails on every address (false); undefined after `ms`. */
+  started(gen: number, ms = 15000): Promise<boolean | undefined> {
+    return new Promise((res) => {
+      const t0 = Date.now();
+      const iv = setInterval(() => {
+        const a = this.active;
+        if (gen !== this.gen) { clearInterval(iv); res(undefined); return; }
+        if (this.failed) { clearInterval(iv); res(false); return; }
+        if (a && !a.paused && a.currentTime > 0) { clearInterval(iv); res(true); return; }
+        if (Date.now() - t0 > ms) { clearInterval(iv); res(undefined); }
+      }, 250);
+    });
   }
   prev() {
     const a = this.media();
@@ -130,10 +158,10 @@ class WebPlayerImpl {
     if (!a || !t) return { state: 'idle', attributes: { volume_level: vol } };
     const live = !Number.isFinite(a.duration);
     return {
-      state: this.stopped || a.ended ? 'idle' : a.paused ? 'paused' : 'playing',
+      state: this.failed || this.stopped || a.ended ? 'idle' : a.paused ? 'paused' : 'playing',
       attributes: {
         media_title: t.title, media_artist: t.artist, media_content_id: t.id || t.url, hifi_format: t.fmt, media_album_name: t.album, entity_picture: t.art,
-        media_duration: live ? (t.cross ? 0 : t.dur) : a.duration,
+        media_duration: live ? (t.cross || t.live ? 0 : t.dur) : a.duration,
         media_position: a.currentTime, media_position_updated_at: new Date().toISOString(),
         volume_level: vol, is_volume_muted: a.muted,
       },

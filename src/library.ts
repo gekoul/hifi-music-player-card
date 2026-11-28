@@ -4,6 +4,7 @@ import type { Localize } from './localize';
 import type { HomeAssistant, LibraryConfig, Output } from './types';
 import { LS, fixText, fmt } from './ui';
 import { WebPlayer, type Track } from './web-player';
+import { radioStreams } from './radio';
 import { formatBadges, fromJellyHA, fromPath, type AudioFormat } from './quality';
 
 // ── data model ──
@@ -620,6 +621,7 @@ export class HifiLibrary extends LitElement {
     };
     try {
       if (it.src === 'jh') { await this._playJH(it, enqueue, col, order); return; }
+      if (out.browser && it.src === 'ma' && it.ctype === 'radio') { await this._playRadio(it); return; }
       if (out.browser) {
         if (it.src !== 'ms') throw new Error(t('browser_cant'));
         let list: Item[];
@@ -632,7 +634,9 @@ export class HifiLibrary extends LitElement {
         const first = await this._resolve(list[start]);
         if (!first) throw new Error(t('browser_cant'));
         if (enqueue) { WebPlayer.append(WebPlayer.gen, first); this._say(t('queued_on', { output: name, title: it.t }), true); return; }
+        if (/^media-source:\/\/radio_browser\//.test(list[start].id || '')) first.live = true;
         const gen = WebPlayer.load([first]);
+        this._watch(gen, it.t);
         void (async () => { for (let i = start + 1; i < list.length; i++) { if (gen !== WebPlayer.gen) return; const tr = await this._resolve(list[i]); if (tr) WebPlayer.append(gen, tr); } })();
         this._say(t(mix ? 'shuffling_on' : 'playing_on', { output: name, title: it.t }), true);
         return;
@@ -693,6 +697,25 @@ export class HifiLibrary extends LitElement {
       if (mix && it.jk !== 'playlist' && !this.caps?.shuffle) { this._say(t('no_shuffle', { output: name }), false); return; }
     }
     this._say(t(mix ? 'shuffling_on' : 'playing_on', { output: name, title: it.t }), true);
+  }
+  /**
+   * Music Assistant radio on "This browser": Music Assistant only streams to its own players,
+   * so the station's own stream is found through Radio Browser and played here.
+   */
+  private async _playRadio(it: Item) {
+    const t = this.t;
+    this._say(t('tuning', { title: it.t }), true);
+    const urls = await radioStreams({ uri: it.id, name: it.t, img: it.img });
+    if (!urls.length) throw new Error(t('radio_not_found'));
+    const gen = WebPlayer.load([{ id: it.id, url: urls[0], alt: urls.slice(1), title: it.t, artist: t('live_radio'), art: it.img, cross: true, live: true }]);
+    this._say(t('playing_on', { output: this.outName, title: it.t }), true);
+    this._watch(gen, it.t);
+  }
+  /** Tells the user when a stream doesn't start in this browser (blocked, offline, unsupported format). */
+  private _watch(gen: number, title: string) {
+    void WebPlayer.started(gen).then((ok) => {
+      if (ok === false) this._say(this.t('cant_play', { output: this.outName, title, error: this.t('stream_failed') }), false);
+    });
   }
   private _say(text: string, ok: boolean) {
     this._toast = { text, ok };

@@ -167,7 +167,10 @@ The card never connects to a share itself. Add the share once in Home Assistant:
 - Browsers need one tap before audio starts (autoplay rule).
 - Streams from other servers without CORS headers still play, but without levels.
 - Playback stops when the tab closes or the device sleeps.
-- Music Assistant library items and libraries reached through other players (Plex, Sonos…) can't play here. Folders, Jellyfin/JellyHA and other media-source items can.
+- Folders, Jellyfin/JellyHA, Radio Browser and other media-source items play here.
+- Music Assistant radio stations play here too: Music Assistant streams only to its own players, so the card finds the station's own stream in the public Radio Browser directory (https streams first).
+- Other Music Assistant items (tracks, albums, playlists) and libraries reached through other players (Plex, Sonos…) can't play here.
+- On an https dashboard, a station that streams only over plain http can't play in the browser (browsers block it). The card tells you when a stream doesn't start.
 
 ## Player compatibility
 
