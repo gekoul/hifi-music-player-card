@@ -44,8 +44,12 @@ window.calls = [];
 const hass = {
   services: { jellyha: { search: {}, play_music: {}, get_item: {} } }, states, entities, areas, devices: {}, language: q.get('lang') || 'en', locale: { language: q.get('lang') || 'en' }, themes: { darkMode: true },
   hassUrl: (p) => 'http://ha.local' + p,
-  callService: async (d, s, data, target) => { window.calls.push([d, s, data, target]); return {}; },
+  callService: async (d, s, data, target) => { window.calls.push([d, s, data, target]); if (window.maRadioFails && d === 'music_assistant' && s === 'play_media' && String(data.media_id).startsWith('library://radio')) throw new Error('No playable items found'); return {}; },
   callWS: async (m) => {
+    if (m.type === 'media_source/browse_media' && m.media_content_id.startsWith('media-source://radio_browser/country/')) {
+      if (window.noRadioBrowser) throw new Error('not found');
+      return { title: 'Greece', children: [node('Rock FM 96.9', 'media-source://radio_browser/rb-rock', 'music', false, true, { thumbnail: 'https://img.example/rockfm969logo.png' }), node('Classic Rock', 'media-source://radio_browser/rb-classic', 'music', false, true)] };
+    }
     window.calls.push(['ws', m.type, m]);
     if (m.type === 'media_source/browse_media') { const n = tree[m.media_content_id]; if (!n) throw new Error('not found'); return { ...n, media_content_id: m.media_content_id, media_class: 'directory', can_expand: true, can_play: false }; }
     if (m.type === 'media_player/browse_media') {
@@ -66,6 +70,10 @@ const hass = {
     }
     if (m.type === 'call_service' && m.domain === 'jellyha' && m.service === 'get_item') return { response: { id: m.service_data.item_id, audio_codec: 'flac', audio_bit_depth: 16, audio_sample_rate: 44100, audio_bit_rate: 1011000, audio_channels: 2, is_lossless: true, is_hi_res: false } };
     if (m.type === 'call_service' && m.domain === 'jellyha' && m.service === 'get_playlists') return { response: { playlists: [{ id: 'p1', name: 'Morning Coffee' }] } };
+    if (m.type === 'media_source/resolve_media' && m.media_content_id.startsWith('media-source://radio_browser/')) {
+      if (window.noRadioBrowser) throw new Error('not found');
+      return { url: { 'rb-rock': 'https://stream.example/ha-rock.mp3', 'rb-classic': 'https://other.example/classic.mp3' }[m.media_content_id.split('/').pop()] || null };
+    }
     if (m.type === 'media_source/resolve_media') return { url: '/media/local/x.mp3' };
     return {};
   },

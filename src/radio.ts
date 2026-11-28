@@ -78,22 +78,43 @@ async function api<T>(path: string): Promise<T | null> {
   return null;
 }
 
+/** Looks stations up through Home Assistant's own Radio Browser integration (no request leaves the browser for it). */
+export interface HaRadio {
+  /** stream address of a Radio Browser station id, or null */
+  resolve(uuid: string): Promise<string | null>;
+  /** stations of a country: Home Assistant media-source items */
+  country(cc: string): Promise<{ title: string; media_content_id: string; thumbnail?: string }[]>;
+}
+
 const found = new Map<string, string[]>();
 
-/** Stream addresses for a station, best first. Empty when nothing was found. */
-export async function radioStreams(st: { uri?: string; name: string; img?: string }, extra: string[] = []): Promise<string[]> {
+/**
+ * Stream addresses for a station as the stations list them (http or https), best first.
+ * Order of lookup: the address in Music Assistant's uri; Home Assistant's Radio Browser (by id, then by name
+ * and logo in the stations of `countries`); the public Radio Browser directory.
+ */
+export async function radioCandidates(st: { uri?: string; name: string; img?: string }, ha?: HaRadio, countries: string[] = ['GR', 'GB', 'US', 'DE', 'FR', 'IT']): Promise<string[]> {
   const k = `${st.uri}|${st.name}`;
   if (found.has(k)) return found.get(k)!;
   const { uuid, url } = urisFromId(st.uri || '');
-  const urls = [...extra];
+  const urls: string[] = [];
   if (url) urls.push(url);
-  if (uuid && !urls.length) {
+  if (uuid && ha) { const u = await ha.resolve(uuid).catch(() => null); if (u) urls.push(u); }
+  if (!urls.length && ha && st.name) {
+    for (const cc of [...new Set(countries)]) {
+      const list = await ha.country(cc).catch(() => []);
+      const stations: RbStation[] = list.map((x) => ({ stationuuid: x.media_content_id.split('/').pop() || '', name: x.title, favicon: x.thumbnail, lastcheckok: 1 }));
+      const best = rankStations(stations, st.name, st.img).slice(0, 3);
+      for (const b of best) { const u = await ha.resolve(b.stationuuid).catch(() => null); if (u) urls.push(u); }
+      if (urls.length) break;
+    }
+  }
+  if (!urls.length && uuid) {
     const r = await api<RbStation[]>(`/json/stations/byuuid/${uuid}`);
     r?.forEach((s) => urls.push(s.url_resolved || s.url || ''));
   }
   if (!urls.length && st.name) {
-    const r = await api<RbStation[]>(`/json/stations/byname/${encodeURIComponent(st.name)}?hidebroken=true&order=votes&reverse=true&limit=40`)
-      || [];
+    const r = await api<RbStation[]>(`/json/stations/byname/${encodeURIComponent(st.name)}?hidebroken=true&order=votes&reverse=true&limit=40`) || [];
     let best = rankStations(r, st.name, st.img);
     if (!best.length) {
       // names in Music Assistant are sometimes shortened or decorated: search by the main word
@@ -103,8 +124,13 @@ export async function radioStreams(st: { uri?: string; name: string; img?: strin
     // the first matches are usually the same station listed more than once with other stream addresses
     best.slice(0, 4).forEach((s) => urls.push(s.url_resolved || s.url || ''));
   }
-  const a = typeof document !== 'undefined' ? document.createElement('audio') : null;
-  const out = orderUrls(urls.filter(Boolean), typeof location !== 'undefined' && location.protocol === 'https:', !!a?.canPlayType('application/vnd.apple.mpegurl'));
+  const out = [...new Set(urls.filter(Boolean))];
   if (out.length) found.set(k, out);
   return out;
+}
+
+/** The same, ordered for playing in this browser (https first, plain http only on an http page). */
+export async function radioStreams(st: { uri?: string; name: string; img?: string }, ha?: HaRadio, countries?: string[]): Promise<string[]> {
+  const a = typeof document !== 'undefined' ? document.createElement('audio') : null;
+  return orderUrls(await radioCandidates(st, ha, countries), typeof location !== 'undefined' && location.protocol === 'https:', !!a?.canPlayType('application/vnd.apple.mpegurl'));
 }

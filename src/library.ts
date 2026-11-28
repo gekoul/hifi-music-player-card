@@ -4,7 +4,7 @@ import type { Localize } from './localize';
 import type { HomeAssistant, LibraryConfig, Output } from './types';
 import { LS, fixText, fmt } from './ui';
 import { WebPlayer, type Track } from './web-player';
-import { radioStreams } from './radio';
+import { radioCandidates, radioStreams, type HaRadio } from './radio';
 import { formatBadges, fromJellyHA, fromPath, type AudioFormat } from './quality';
 
 // ── data model ──
@@ -644,7 +644,15 @@ export class HifiLibrary extends LitElement {
       if (it.src === 'ma') {
         if (!out.ma) throw new Error('needs a Music Assistant player');
         await setShuffle(mix);
-        await this.hass.callService('music_assistant', 'play_media', { media_id: it.id, media_type: it.ctype, enqueue: enqueue || 'replace' }, { entity_id: out.entity });
+        try {
+          await this.hass.callService('music_assistant', 'play_media', { media_id: it.id, media_type: it.ctype, enqueue: enqueue || 'replace' }, { entity_id: out.entity });
+        } catch (e) {
+          // a station Music Assistant can't open any more: play the station's own stream on the same player instead
+          if (it.ctype !== 'radio') throw e;
+          const urls = await radioCandidates({ uri: it.id, name: it.t, img: it.img }, this._haRadio(), this._countries());
+          if (!urls.length) throw e;
+          await this.hass.callService('music_assistant', 'play_media', { media_id: urls[0], media_type: 'radio', enqueue: 'replace' }, { entity_id: out.entity });
+        }
       } else if (it.nav) {
         // play a folder: first file now, the rest queued when the player supports a queue
         let files = await this._files(it);
@@ -705,12 +713,26 @@ export class HifiLibrary extends LitElement {
   private async _playRadio(it: Item) {
     const t = this.t;
     this._say(t('tuning', { title: it.t }), true);
-    const urls = await radioStreams({ uri: it.id, name: it.t, img: it.img });
+    const urls = await radioStreams({ uri: it.id, name: it.t, img: it.img }, this._haRadio(), this._countries());
     if (!urls.length) throw new Error(t('radio_not_found'));
     const gen = WebPlayer.load([{ id: it.id, url: urls[0], alt: urls.slice(1), title: it.t, artist: t('live_radio'), art: it.img, cross: true, live: true }]);
     this._say(t('playing_on', { output: this.outName, title: it.t }), true);
     this._watch(gen, it.t);
   }
+  /** Home Assistant's Radio Browser integration, when it is set up. */
+  private _rbCountries = new Map<string, Promise<any[]>>();
+  private _haRadio(): HaRadio | undefined {
+    if (!this.hass) return undefined;
+    return {
+      resolve: async (uuid) => (await this._ws<{ url: string }>({ type: 'media_source/resolve_media', media_content_id: `media-source://radio_browser/${uuid}` }).catch(() => null))?.url || null,
+      country: (cc) => {
+        if (!this._rbCountries.has(cc)) this._rbCountries.set(cc, this._ws<BrowseNode>({ type: 'media_source/browse_media', media_content_id: `media-source://radio_browser/country/${cc}` }).then((n) => n?.children || []).catch(() => []));
+        return this._rbCountries.get(cc)!;
+      },
+    };
+  }
+  /** Countries to look stations up in: Home Assistant's own country first. */
+  private _countries() { const c = (this.hass as any)?.config?.country; return [...(c ? [String(c).toUpperCase()] : []), 'GR', 'GB', 'US', 'DE', 'FR', 'IT']; }
   /** Tells the user when a stream doesn't start in this browser (blocked, offline, unsupported format). */
   private _watch(gen: number, title: string) {
     void WebPlayer.started(gen).then((ok) => {

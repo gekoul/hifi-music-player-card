@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { load, lib, openLibrary } from './helpers';
+import { calls, load, lib, openLibrary } from './helpers';
 
 const toast = (page: any) => lib<string>(page, `(L) => L.querySelector('.toast')?.textContent || ''`);
 const cur = (page: any) => page.evaluate(() => { const c = (window as any).__hifiWebPlayer.cur(); return c && { url: c.url, alt: c.alt, live: c.live, title: c.title }; });
@@ -24,6 +24,7 @@ test('Music Assistant radio plays on This browser through the station\'s own str
   const tried: string[] = [];
   await page.route(/(stream\d?|other)\.example\//, (r) => { tried.push(r.request().url()); return r.fulfill({ status: 404, body: '' }); });
   await load(page);
+  await page.evaluate(() => { (window as any).noRadioBrowser = true; });
   await openMaRadio(page);
   await lib(page, `(L) => L.querySelector('.r[data-c="1"] .rp').click()`);
   await expect.poll(() => asked.length).toBeGreaterThan(0);
@@ -42,6 +43,7 @@ test('Music Assistant radio plays on This browser through the station\'s own str
 test('a station that is not found gives a clear message', async ({ page }) => {
   await page.route('https://*.api.radio-browser.info/**', (r) => r.fulfill({ json: [] }));
   await load(page);
+  await page.evaluate(() => { (window as any).noRadioBrowser = true; });
   await openMaRadio(page);
   await lib(page, `(L) => L.querySelector('.r[data-c="1"] .rp').click()`);
   await expect.poll(() => toast(page)).toContain('no stream for this station');
@@ -57,6 +59,7 @@ test('a working station plays and shows as live', async ({ page }) => {
   await page.route('https://*.api.radio-browser.info/**', (r) => r.fulfill({ json: [{ stationuuid: 'u1', name: 'Rock FM 96.9', url_resolved: 'https://stream.example/rock.wav', votes: 9, lastcheckok: 1 }] }));
   await page.route('https://stream.example/**', (r) => r.fulfill({ status: 200, contentType: 'audio/wav', body: buf as any }));
   await load(page);
+  await page.evaluate(() => { (window as any).noRadioBrowser = true; });
   await openMaRadio(page);
   await lib(page, `(L) => L.querySelector('.r[data-c="1"] .rp').click()`);
   await expect.poll(() => page.evaluate(() => (window as any).__hifiWebPlayer.state().state), { timeout: 10000 }).toBe('playing');
@@ -65,4 +68,28 @@ test('a working station plays and shows as live', async ({ page }) => {
   expect(st.media_artist).toBe('Live radio');
   await page.waitForTimeout(1500);
   expect(await toast(page)).not.toContain('did not start');
+});
+
+test('stations are found through Home Assistant\'s Radio Browser first', async ({ page }) => {
+  const asked: string[] = [], tried: string[] = [];
+  await page.route('https://*.api.radio-browser.info/**', (r) => { asked.push(r.request().url()); return r.fulfill({ json: [] }); });
+  await page.route(/(stream|other)\.example\//, (r) => { tried.push(r.request().url()); return r.fulfill({ status: 404, body: '' }); });
+  await load(page);
+  await openMaRadio(page);
+  await lib(page, `(L) => L.querySelector('.r[data-c="1"] .rp').click()`);
+  await expect.poll(() => toast(page), { timeout: 20000 }).toContain('did not start');
+  expect(tried[0]).toBe('https://stream.example/ha-rock.mp3');
+  expect(tried.join(' ')).not.toContain('other.example');
+  expect(asked).toEqual([]);
+});
+
+test('a Music Assistant station that fails on a speaker plays from its own stream', async ({ page }) => {
+  await load(page);
+  await page.evaluate(() => { (window as any).maRadioFails = true; });
+  await openMaRadio(page).catch(() => {});
+  await page.evaluate(() => [...(window as any).el.shadowRoot.querySelectorAll('.ob')].find((b: any) => b.textContent.includes('WiiM Attic')).click());
+  await page.waitForTimeout(200);
+  await lib(page, `(L) => L.querySelector('.r[data-c="1"] .rp').click()`);
+  await expect.poll(async () => (await calls(page)).filter((c: any[]) => c[1] === 'play_media').map((c: any[]) => c[2].media_id)).toEqual(['library://radio/7', 'https://stream.example/ha-rock.mp3']);
+  await expect.poll(() => toast(page)).toContain('Playing on');
 });
