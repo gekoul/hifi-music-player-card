@@ -106,7 +106,7 @@ export interface CardConfig {
 
   layout?: 'auto' | 'wide' | 'compact' | 'mini';
   max_height?: number;
-  show?: Partial<Record<'art' | 'spectrum' | 'meters' | 'seek' | 'outputs' | 'switches' | 'chips' | 'volume' | 'theme_switch', boolean>>;
+  show?: Partial<Record<'art' | 'spectrum' | 'meters' | 'seek' | 'outputs' | 'switches' | 'chips' | 'volume' | 'theme_switch' | 'quality', boolean>>;
   idle_text?: string;
 
   skip?: { back?: number; forward?: number };

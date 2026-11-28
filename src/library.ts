@@ -4,6 +4,7 @@ import type { Localize } from './localize';
 import type { HomeAssistant, LibraryConfig, Output } from './types';
 import { LS, fixText, fmt } from './ui';
 import { WebPlayer, type Track } from './web-player';
+import { formatBadges, fromJellyHA, fromPath, type AudioFormat } from './quality';
 
 // ── data model ──
 interface Item {
@@ -24,6 +25,7 @@ interface Item {
   jdir?: JhNode;
   url?: string;       // JellyHA signed stream URL
   album?: string;
+  fmt?: AudioFormat;
 }
 interface JhNode { name: string; rel: string; dirs: JhNode[]; map: Map<string, JhNode>; albumId?: string }
 interface Col {
@@ -83,7 +85,7 @@ const START_NAMES = /^(multimedia|music|μουσική|musik|musique|música)$/i
 export class HifiLibrary extends LitElement {
   static override properties = {
     hass: { attribute: false }, cfg: { attribute: false }, output: { attribute: false }, caps: { attribute: false },
-    t: { attribute: false }, theme: {}, outName: {}, storeKey: {}, now: { attribute: false },
+    t: { attribute: false }, theme: {}, outName: {}, storeKey: {}, now: { attribute: false }, quality: { type: Boolean },
     _open: { state: true }, _cols: { state: true }, _toast: { state: true }, _narrow: { state: true },
   };
   hass?: HomeAssistant;
@@ -94,6 +96,8 @@ export class HifiLibrary extends LitElement {
   theme = 'streamer';
   outName = '';
   storeKey = 'hifi_lib';
+  /** Show codec / HI-RES tags on track rows. */
+  quality = true;
   /** What the selected output is playing: highlighted in the list and followed when the track changes. */
   now?: { id?: string; title?: string; artist?: string };
 
@@ -222,6 +226,7 @@ export class HifiLibrary extends LitElement {
       src, entity, t: split ? m![2] : t, s: split ? m![1] : undefined, ic: CLASS_ICON[n.media_class] || (n.can_expand ? 'mdi:folder' : 'mdi:music-note'),
       img: n.thumbnail ? this._url(n.thumbnail) : undefined, nav: n.can_expand, play: n.can_play || n.can_expand,
       id: n.media_content_id, ctype: n.media_content_type, mclass: n.media_class,
+      fmt: n.can_expand ? undefined : fromPath(n.title) || fromPath(n.media_content_id),
     };
   }
   private _url(u: string) { return u.startsWith('/') && this.hass?.hassUrl ? this.hass.hassUrl(u) : u; }
@@ -269,7 +274,7 @@ export class HifiLibrary extends LitElement {
     return {
       src: 'jh', jk: 'track', id: x.id, t: fixText(x.name).trim() || fixText(String(x.path || '').split('/').pop()), s: fixText(x.artist_name),
       ic: 'mdi:music-note', img: x.image_url ? this._url(x.image_url) : undefined, dur: x.duration_seconds, play: true, url: x.stream_url ? this._url(x.stream_url) : undefined,
-      album: fixText(x.album),
+      album: fixText(x.album), fmt: fromJellyHA(x) || fromPath(x.path),
     };
   }
   private async _jhTracks(parentId: string): Promise<Item[]> {
@@ -595,7 +600,7 @@ export class HifiLibrary extends LitElement {
     if (it.src !== 'ms') return null;
     const r = await this._ws<{ url: string; mime_type?: string }>({ type: 'media_source/resolve_media', media_content_id: it.id }).catch(() => null);
     if (!r?.url) return null;
-    return { id: it.id, url: this._url(r.url), title: it.t, artist: it.s, art: it.img };
+    return { id: it.id, url: this._url(r.url), title: it.t, artist: it.s, art: it.img, fmt: it.fmt || fromPath(r.mime_type?.replace('audio/', '.')) };
   }
   /**
    * Plays an item. `order` is set by the column buttons: 'shuffle' plays the whole list in random order,
@@ -670,7 +675,7 @@ export class HifiLibrary extends LitElement {
       if (out.browser || it.jk === 'playlist') tracks = await this._jhTracks(id);
     }
     if (out.browser) {
-      const q = (x: Item) => ({ id: x.id, url: x.url!, title: x.t, artist: x.s, album: x.album, art: x.img, dur: x.dur });
+      const q = (x: Item) => ({ id: x.id, fmt: x.fmt, url: x.url!, title: x.t, artist: x.s, album: x.album, art: x.img, dur: x.dur });
       let list = tracks.filter((x) => x.url);
       if (!list.length) throw new Error(t('browser_cant'));
       if (enqueue) { WebPlayer.append(WebPlayer.gen, q(it.jk === 'track' ? it : list[0])); this._say(t('queued_on', { output: name, title: it.t }), true); return; }
@@ -762,6 +767,7 @@ export class HifiLibrary extends LitElement {
                 ${ci && it.play ? html`<span class="acts"><button type="button" class="rp" title=${t('play')} aria-label="${t('play')} ${it.t}" @click=${(e: Event) => { e.stopPropagation(); void this._play(it, undefined, c); }}>▶</button>
                   ${(it.src !== 'jh' && this.caps?.enqueue) || (it.src === 'ma' && this.output?.ma) || (it.src === 'jh' && this.output?.browser) ? html`<button type="button" class="rq" title=${t('play_next')} aria-label="${t('play_next')} ${it.t}" @click=${(e: Event) => { e.stopPropagation(); void this._play(it, 'next', c); }}>⤵</button>
                   <button type="button" class="rq" title=${t('add_queue')} aria-label="${t('add_queue')} ${it.t}" @click=${(e: Event) => { e.stopPropagation(); void this._play(it, 'add', c); }}>+</button>` : nothing}</span>` : nothing}
+                ${this.quality && it.fmt?.codec && !it.nav ? html`<span class="qt" title=${[it.fmt.codec, ...formatBadges(it.fmt)].join(' · ')}>${it.fmt.codec}${it.fmt.hires ? html`<b>HR</b>` : nothing}</span>` : nothing}
                 ${it.dur ? html`<span class="rd">${fmt(it.dur)}</span>` : it.nav ? html`<span class="rc">›</span>` : nothing}
               </div>`)}
         ${c.paged?.more ? html`<button type="button" class="more" @click=${() => this._more(c)}>${t('load_more')}</button>` : nothing}
@@ -829,6 +835,8 @@ button:focus-visible,.r:focus-visible,input:focus-visible{outline:2px solid #7dd
 .rt{flex:1;min-width:0;display:flex;flex-direction:column}
 .rn{font-size:12px;color:#e4e4e4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rs{font-size:10px;color:#808080;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qt{flex:none;font:700 8px ui-monospace,Menlo,Consolas,monospace;letter-spacing:.06em;color:#8b949e;border:1px solid #3a3d42;border-radius:3px;padding:1px 4px;display:flex;gap:3px}
+.qt b{color:var(--acc);font-weight:700}
 .rd{font-size:10px;color:#6f6f6f;font-family:ui-monospace,Menlo,Consolas,monospace}
 .rc{color:#555;font-size:14px;width:10px;text-align:center}
 .rp,.rq{flex:none;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;background:#15171a}

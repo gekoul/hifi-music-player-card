@@ -98,7 +98,7 @@ Everything can be set in the visual editor. YAML reference:
 | --- | --- | --- |
 | `layout` | `auto` | `auto` (by card width), `wide` (≥ 900 px), `compact`, `mini` |
 | `max_height` | — | Switch to compact if wide would be taller than this |
-| `show.*` | all `true` | `art`, `spectrum`, `meters`, `seek`, `outputs`, `switches`, `chips`, `volume` |
+| `show.*` | all `true` | `art`, `spectrum`, `meters`, `seek`, `outputs`, `switches`, `chips`, `volume`, `quality` (audio format) |
 | `idle_text` | "Nothing playing" | |
 
 ### Controls and behaviour
@@ -140,6 +140,19 @@ The drawer looks at what your Home Assistant already has and lists only music. N
 5. **On this player**: the selected output's own content, such as WiiM or Sonos presets, favourites and queue. It changes with the output.
 
 Use `library.sources` to limit the list, by the keys above (`folders`, `music_assistant`, `jellyfin`, `radio`, `dlna`) or by any integration name (`plex`, `sonos`, `kodi`, …).
+
+## Audio format
+
+While something plays, the card shows its format when it is known, and only the parts that are known:
+`FLAC · 24-bit / 96 kHz · 4.6 Mbps`, with HI-RES (24-bit or above 48 kHz), LOSSLESS and MONO / 5.1 badges. Track rows in the
+media browser carry a small codec tag (`FLAC`, `MP3`, `HR` for hi-res).
+
+- Jellyfin through JellyHA: full details, also when a speaker plays a JellyHA stream.
+- This browser: the details of the track it plays.
+- Files: the codec from the file extension.
+- Other players report no format to Home Assistant, so nothing is shown rather than a guess.
+
+Turn it off with `show: { quality: false }`.
 
 ## Network shares (Samba / NFS)
 

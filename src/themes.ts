@@ -19,6 +19,8 @@ export interface VM {
   placeholder?: string;
   chips: [string, string][];
   short: string;          // console chip (app name or LIVE)
+  fmtLine: string;        // FLAC · 24-bit / 96 kHz · 4.6 Mbps
+  fmtShort: string;       // FLAC 24/96 4608K
   caps: Caps;
   shuffle: boolean;
   repeat: string;
@@ -110,6 +112,7 @@ export function streamerWide(vm: VM): TemplateResult {
         <div data-k="pfill" data-w=${IW} style="${pos(0, 0, 0, 4)}border-radius:2px;background:var(--acc);box-shadow:0 0 8px var(--acc)"></div>
         ${vm.caps.seek ? html`<div data-k="pdot" data-w=${IW} style="${pos(-6, -4, 12, 12)}border-radius:50%;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.6)"></div>` : nothing}
       </div></div>
+    ${vm.fmtLine ? html`<div class="s-fmt" style="${pos(X + 60, 214, IW - 120)}">${vm.fmtLine}</div>` : nothing}
     <div class="s-time" data-k="el" style="${pos(X, 214)}">0:00</div><div class="s-time" data-k="rm" style="${pos(X + IW - 40, 214, 40)}text-align:right"></div>` : nothing}
   ${sh('spectrum') ? html`<canvas data-cv="spc" data-pal="s" width=${IW * 2} height="108" style="${pos(X, 236, IW, 54)}"></canvas>` : nothing}
   ${sh('meters') ? html`<div class="s-ch" style="${pos(X, 298)}">L</div><div class="s-ch" style="${pos(X, 308)}">R</div>
@@ -164,7 +167,7 @@ export function consoleWide(vm: VM): TemplateResult {
     <div class="vfd-s" style="${pos(16, 62, DW - 32)}font-size:12px">${vm.artist.toLocaleUpperCase('el')}</div>
     <div class="vfd" data-k="cel" style="${pos(16, 86)}font-size:34px">0:00</div>
     <div class="vfd-s" data-k="crm" style="${pos(150, 100)}font-family:${VFD};font-size:15px;letter-spacing:0"></div>
-    <div class="vfd-s" style="${pos(DW - 100, 90, 84)}text-align:right;letter-spacing:.14em">${vm.short}</div>
+    <div class="vfd-s" style="${pos(DW - 236, 90, 220)}text-align:right;letter-spacing:.12em">${vm.fmtShort || vm.short}</div>
     ${sh('seek') ? html`<div style="${pos(16, 134, DW - 32, 2)}background:rgba(255,200,120,.15)"><div data-k="cfill" data-w=${DW - 32} style="${pos(0, 0, 0, 2)}background:var(--acc);box-shadow:0 0 6px var(--acc)"></div></div>` : nothing}
     ${GLASS}
   </div>
@@ -196,6 +199,7 @@ export function compact(vm: VM): TemplateResult {
         <div class="cp-status">${statusHTML(vm)}</div>
         <div class="cp-title">${con ? vm.title.toLocaleUpperCase('el') : vm.title}</div>
         <div class="cp-artist">${con ? vm.artist.toLocaleUpperCase('el') : vm.artist}</div>
+        ${vm.fmtLine ? html`<div class="cp-fmt">${con ? vm.fmtShort : vm.fmtLine}</div>` : nothing}
         ${sh('chips') && !con ? html`<div class="cp-chips">${vm.chips.map(([c, k]) => html`<span class="chip ${k}">${c}</span>`)}</div>` : nothing}
         ${sh('seek') ? html`<div class="cp-seek" @click=${vm.seek}><div data-k="pfill" data-w="%" class="cp-fill"></div></div>
           <div class="cp-times"><span data-k="el">0:00</span><span data-k="rm"></span></div>` : nothing}

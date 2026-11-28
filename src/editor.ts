@@ -14,7 +14,7 @@ const LABELS: Record<string, string> = {
   theme: 'Theme', theme_switch: 'Show the theme switch', remember_theme: 'Remember the theme per browser', mode: 'Streamer colour mode', accent: 'Accent colour (hex)',
   brand: 'Brand text (Console, top left)', model: 'Model text (Console, top right)', background: 'Background', fonts: 'Fonts', placeholder_art: 'Placeholder artwork URL',
   layout: 'Layout', max_height: 'Maximum height (px)', idle_text: 'Text when nothing plays',
-  art: 'Artwork', spectrum: 'Spectrum', meters: 'Level meters / VU', seek: 'Seek bar', outputs: 'Output selector', switches: 'Switches (Console)', chips: 'Badges', volume: 'Volume knob',
+  art: 'Artwork', spectrum: 'Spectrum', meters: 'Level meters / VU', seek: 'Seek bar', outputs: 'Output selector', switches: 'Switches (Console)', chips: 'Badges', volume: 'Volume knob', quality: 'Audio format (codec, resolution, bitrate)',
   back: 'Skip back (s)', forward: 'Skip forward (s)', step: 'Volume step (0–1)', max: 'Maximum volume (0–1)', confirm_timeout: 'Wait for the player to confirm volume (s)',
   visualizer: 'Visualiser', reduced_motion: 'Reduced motion', pause_offscreen: 'Pause animation when off screen', language: 'Language',
 };
@@ -171,8 +171,8 @@ export class HifiMusicPlayerCardEditor extends LitElement {
       { name: 'idle_text', selector: { text: {} } },
     ], (v) => this._merge(null, v))}
     <div class="sub">Shown parts</div>
-    ${this._form(Object.fromEntries(['art', 'spectrum', 'meters', 'seek', 'outputs', 'switches', 'chips', 'volume'].map((k) => [k, (s as any)[k] !== false])),
-      ['art', 'spectrum', 'meters', 'seek', 'outputs', 'switches', 'chips', 'volume'].map((name) => ({ name, selector: { boolean: {} } })),
+    ${this._form(Object.fromEntries(['art', 'spectrum', 'meters', 'seek', 'outputs', 'switches', 'chips', 'volume', 'quality'].map((k) => [k, (s as any)[k] !== false])),
+      ['art', 'spectrum', 'meters', 'seek', 'outputs', 'switches', 'chips', 'volume', 'quality'].map((name) => ({ name, selector: { boolean: {} } })),
       (v) => { const n: Record<string, boolean> = {}; Object.entries(v).forEach(([k, x]) => { if (x === false) n[k] = false; }); this._set(['show'], Object.keys(n).length ? n : undefined); })}`;
   }
   private _controls() {

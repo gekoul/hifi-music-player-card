@@ -30,6 +30,9 @@ button:focus-visible,select:focus-visible,[role=slider]:focus-visible{box-shadow
 .s-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:700 36px var(--hf);letter-spacing:-.01em;color:#f4f6f8}
 .s-artist{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:500 18px var(--hf);color:#c1c8cf}
 .s-album{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:500 12px var(--hf);color:#6b737d}
+.s-fmt{text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:600 10px ${mono};letter-spacing:.08em;color:var(--acc)}
+.light .streamer .s-fmt{color:#0e7a68}
+.cp-fmt{font:600 10px ${mono};letter-spacing:.08em;color:var(--acc);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .s-time{font:500 11px ${mono};color:#8b949e}
 .s-ch{font:500 10px ${mono};color:#6b737d}
 .s-vol{text-align:center;font:700 10px var(--hf);letter-spacing:.24em;color:#8b949e}.s-vol b{color:#f4f6f8}

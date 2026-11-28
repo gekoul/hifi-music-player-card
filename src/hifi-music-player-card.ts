@@ -7,6 +7,7 @@ import { compact, consoleWide, mini, streamerWide, type Status, type VM } from '
 import type { CardConfig, HomeAssistant, LibraryConfig, Output, PlayerView } from './types';
 import { LS, SH, SW, TEAL, AMBER, clamp, fmt } from './ui';
 import { WebPlayer } from './web-player';
+import { formatBadges, formatLine, formatShort, playingFormat } from './quality';
 import './library';
 import './editor';
 
@@ -424,7 +425,9 @@ export class HifiMusicPlayerCard extends LitElement {
     const title = a.media_title || (status === 'unavailable' ? t('output_unavailable') : this._config.idle_text || t('nothing_playing'));
     const chips: [string, string][] = [];
     if (o?.browser) chips.push([t('this_browser').toLocaleUpperCase('el'), 't']); else if (a.app_name) chips.push([String(a.app_name).toLocaleUpperCase('el'), 't']);
-    if (a.media_content_type) chips.push([String(a.media_content_type).toLocaleUpperCase('el'), '']);
+    const q = this._show('quality') && (status === 'playing' || status === 'paused') ? playingFormat(this.hass!, a, () => this.requestUpdate()) : undefined;
+    if (q?.codec) { chips.push([q.codec, '']); formatBadges(q).forEach((b) => chips.push([b, b === 'HI-RES' ? 't' : ''])); }
+    else if (a.media_content_type) chips.push([String(a.media_content_type).toLocaleUpperCase('el'), '']);
     if (live) chips.push([t('live').toLocaleUpperCase('el'), 'a']);
     if (a.shuffle) chips.push([t('shuffle').toLocaleUpperCase('el'), '']);
     if (a.repeat && a.repeat !== 'off') chips.push([`${t('repeat').toLocaleUpperCase('el')} ${String(a.repeat).toLocaleUpperCase('el')}`, '']);
@@ -437,6 +440,7 @@ export class HifiMusicPlayerCard extends LitElement {
       status, title: String(title), artist: String(a.media_artist || ''), album: String(a.media_album_name || ''),
       art: pic && this.hass?.hassUrl && pic.startsWith('/') ? this.hass.hassUrl(pic) : pic,
       placeholder: this._config.placeholder_art,
+      fmtLine: formatLine(q), fmtShort: formatShort(q),
       chips, short: live ? t('live').toLocaleUpperCase('el') : o?.browser ? 'BROWSER' : (an.length > 9 ? an.split(/\s+/).map((w) => w[0]).join('') : an).toLocaleUpperCase('el'),
       caps: this._caps(o), shuffle: !!a.shuffle, repeat: String(a.repeat || 'off'), muted: !!a.is_volume_muted,
       light: this._light, brand: this._config.brand || '', model: this._config.model || '',
@@ -474,12 +478,12 @@ export class HifiMusicPlayerCard extends LitElement {
     return html`<ha-card class=${cls} style=${style}>
       ${body}
       ${lib && this._layout !== 'mini' ? html`<hifi-library .hass=${this.hass} .cfg=${lib} .output=${vm.out} .caps=${vm.caps} .t=${this._t}
-        .theme=${this._theme} .outName=${vm.outName(vm.out || { id: '', name: '—' })} .storeKey=${this._key('lib')} .now=${now}></hifi-library>` : nothing}
+        .theme=${this._theme} .outName=${vm.outName(vm.out || { id: '', name: '—' })} .storeKey=${this._key('lib')} .now=${now} .quality=${this._show('quality')}></hifi-library>` : nothing}
       ${this._dlg ? html`<div class="dlg" role="dialog" aria-modal="true" aria-label=${vm.title}
           @click=${(e: Event) => { if (e.target === e.currentTarget) this._dlg = false; }} @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') this._dlg = false; }}>
         <div class="dlg-in"><button type="button" class="dlg-x" aria-label="Close" @click=${() => { this._dlg = false; }}>✕</button>${compact(vm)}
         ${lib ? html`<hifi-library .hass=${this.hass} .cfg=${{ ...lib, view: 'list' }} .output=${vm.out} .caps=${vm.caps} .t=${this._t} .theme=${this._theme}
-          .outName=${vm.outName(vm.out || { id: '', name: '—' })} .storeKey=${this._key('lib')} .now=${now}></hifi-library>` : nothing}</div></div>` : nothing}
+          .outName=${vm.outName(vm.out || { id: '', name: '—' })} .storeKey=${this._key('lib')} .now=${now} .quality=${this._show('quality')}></hifi-library>` : nothing}</div></div>` : nothing}
     </ha-card>`;
   }
 

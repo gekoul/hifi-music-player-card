@@ -2,7 +2,10 @@
 // Two elements: one connected to an analyser (same-origin / CORS-enabled streams),
 // one plain (cross-origin streams that would play silent through Web Audio).
 
+import type { AudioFormat } from './quality';
+
 export interface Track {
+  fmt?: AudioFormat;
   url: string;
   id?: string;          // the library item it came from (to show what is playing)
   title?: string;
@@ -129,7 +132,7 @@ class WebPlayerImpl {
     return {
       state: this.stopped || a.ended ? 'idle' : a.paused ? 'paused' : 'playing',
       attributes: {
-        media_title: t.title, media_artist: t.artist, media_content_id: t.id || t.url, media_album_name: t.album, entity_picture: t.art,
+        media_title: t.title, media_artist: t.artist, media_content_id: t.id || t.url, hifi_format: t.fmt, media_album_name: t.album, entity_picture: t.art,
         media_duration: live ? (t.cross ? 0 : t.dur) : a.duration,
         media_position: a.currentTime, media_position_updated_at: new Date().toISOString(),
         volume_level: vol, is_volume_muted: a.muted,
